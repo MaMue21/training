@@ -119,8 +119,12 @@
   .seg{flex:1; background:transparent; border:none; color:var(--text-dim); font-family:var(--sans); font-size:12px; font-weight:600; padding:8px 4px; border-radius:5px; display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer;}
   .seg.active{background:var(--accent); color:#1a1206;}
   .seg .segsub{font-size:10px; font-weight:400; opacity:.8;}
-  .progswitch{margin-top:14px; padding-top:12px; border-top:1px solid var(--line); font-size:12px; color:var(--text-dim); text-align:center;}
-  .progswitch a{color:var(--accent); text-decoration:none;}
+  .progtoggle{position:relative; display:flex; background:var(--surface-2); border:1px solid var(--line); border-radius:999px; padding:4px; margin-bottom:16px;}
+  .progtoggle::before{content:''; position:absolute; top:4px; bottom:4px; left:4px; width:calc(50% - 4px); background:var(--accent); border-radius:999px; transition:transform .28s cubic-bezier(.4,0,.2,1); box-shadow:0 1px 3px rgba(0,0,0,.4);}
+  .progtoggle.pos-home::before{transform:translateX(100%);}
+  .progtoggle .pt-btn{position:relative; z-index:1; flex:1; background:transparent; border:none; color:var(--text-dim); font-family:var(--sans); font-size:13px; font-weight:600; padding:10px 8px; display:flex; align-items:center; justify-content:center; gap:7px; cursor:pointer; transition:color .2s;}
+  .progtoggle .pt-btn.active{color:#1a1206;}
+  .progtoggle .pt-btn svg{flex-shrink:0; width:18px; height:18px;}
   .examples{display:flex; flex-wrap:wrap; gap:5px; margin:2px 0 10px;}
   .ex-chip{background:transparent; border:1px solid var(--line); color:var(--text-dim); font-family:var(--sans); font-size:11px; padding:4px 9px; border-radius:12px; cursor:pointer;}
   .ex-chip:active{background:var(--accent-dim); color:var(--accent); border-color:var(--accent);}
@@ -563,10 +567,15 @@ function progExerciseCount(program, variant, length){
   return PROGRAMS[program].workouts[variant].exercises.filter(LENGTHS[length].filter).length;
 }
 
+const ICON_DUMBBELL = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="2" y="7" width="3" height="10" rx="1"/><rect x="6" y="9" width="2" height="6" rx=".5"/><rect x="8" y="11" width="8" height="2"/><rect x="16" y="9" width="2" height="6" rx=".5"/><rect x="19" y="7" width="3" height="10" rx="1"/></svg>';
+const ICON_HOUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3L2 12h3v8h5v-5h4v5h5v-8h3z"/></svg>';
+
 function renderProgramSwitch(){
   const p = DATA.currentProgram || 'gym';
-  const other = p === 'gym' ? 'home' : 'gym';
-  return `<div class="progswitch">Programm: <b>${PROGRAMS[p].name}</b> <a href="#" data-action="switch-program" data-to="${other}">→ auf ${PROGRAMS[other].name} wechseln</a></div>`;
+  return `<div class="progtoggle pos-${p}" role="tablist" aria-label="Programm">
+    <button class="pt-btn ${p==='gym'?'active':''}" data-action="switch-program" data-to="gym" role="tab" aria-selected="${p==='gym'}">${ICON_DUMBBELL}<span>Gym</span></button>
+    <button class="pt-btn ${p==='home'?'active':''}" data-action="switch-program" data-to="home" role="tab" aria-selected="${p==='home'}">${ICON_HOUSE}<span>Home</span></button>
+  </div>`;
 }
 
 function renderLengthChoice(variant){
@@ -589,13 +598,13 @@ function renderOnboarding(){
   const len = DATA.currentLength || 'voll';
   return `
     <div class="card">
+      ${renderProgramSwitch()}
       <h2>${firstWk.name}</h2>
       <div class="sub">Der Tag, an dem du dein erstes Training abschließt, wird automatisch <b>Tag 1</b> deines 7-Tage-Zyklus.</div>
       ${renderLengthChoice('A')}
       <button class="btn" data-action="start-workout" data-variant="A" data-length="${len}">${LENGTHS[len].label} starten (${progExerciseCount(p,'A',len)} Übungen)</button>
       <div style="height:8px"></div>
       <button class="btn secondary" data-action="start-cardio">Ausdauer loggen</button>
-      ${renderProgramSwitch()}
     </div>
     <div class="card">
       <h2 class="cardlabel">Der Split · ${PROGRAMS[p].name}</h2>
@@ -651,10 +660,10 @@ function renderHome(){
 
   return `
     <div class="card">
+      ${renderProgramSwitch()}
       <h2>${title}</h2>
       <div class="sub">${sub}</div>
       ${buttons}
-      ${renderProgramSwitch()}
     </div>
     <div class="card">
       <h2 class="cardlabel">Dein 7-Tage-Zyklus</h2>
