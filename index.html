@@ -114,6 +114,9 @@
   .timerwrap .tlabel{font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.08em;}
   .chiprow{display:flex; gap:8px; margin-top:8px;}
   .chip{background:var(--surface-2); border:1px solid var(--line); color:var(--text-dim); font-family:var(--mono); font-size:12px; padding:6px 10px; border-radius:20px;}
+  .examples{display:flex; flex-wrap:wrap; gap:5px; margin:2px 0 10px;}
+  .ex-chip{background:transparent; border:1px solid var(--line); color:var(--text-dim); font-family:var(--sans); font-size:11px; padding:4px 9px; border-radius:12px; cursor:pointer;}
+  .ex-chip:active{background:var(--accent-dim); color:var(--accent); border-color:var(--accent);}
   .histitem{border-bottom:1px solid var(--line); padding:12px 0;}
   .histitem:last-child{border-bottom:none;}
   .histitem .hd{display:flex; justify-content:space-between; font-size:14px; font-weight:600;}
@@ -150,31 +153,52 @@ const STORAGE_KEY = "trainingsapp_v2";
    verknüpfen dieselbe Übung über mehrere Einheiten hinweg für die Progression. */
 const PLAN = {
   A: { name:'Ganzkörper A', exercises: [
-    {id:'squat_var',    name:'Kniebeugevariation',            muscle:'Beine',    sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight'},
-    {id:'hpress',       name:'Horizontale Druckbewegung',     muscle:'Brust',    sets:3, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight'},
-    {id:'vpull_wide',   name:'Vertikale Zugbewegung breit',   muscle:'Rücken',   sets:2, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight'},
-    {id:'hpull_wide',   name:'Horizontale Zugbewegung breit', muscle:'Rücken',   sets:2, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight'},
-    {id:'lateral',      name:'Seithebevariation',             muscle:'Schulter', sets:3, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight'},
-    {id:'legcurl',      name:'Beinbeuger Isolation',          muscle:'Beine',    sets:2, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight'},
-    {id:'biceps',       name:'Bizeps Isolation',              muscle:'Arme',     sets:2, repMin:6,  repMax:10, unit:'kg', inc:1,   type:'weight'}
+    {id:'squat_var',    name:'Kniebeugevariation',            muscle:'Beine',    sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight',
+      examples:['Kniebeuge frei/Multipresse','Hack Squat','Pendulum Squat','Split Squat','Bulgarian Split Squat']},
+    {id:'hpress',       name:'Horizontale Druckbewegung',     muscle:'Brust',    sets:3, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight',
+      examples:['Bankdrücken LH','Bankdrücken KH','Bankdrücken Multipresse','Brustpresse Maschine','Cable Press']},
+    {id:'vpull_wide',   name:'Vertikale Zugbewegung breit',   muscle:'Rücken',   sets:2, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight',
+      examples:['Latziehen breit','Latzugmaschine breit','Klimmzüge breit']},
+    {id:'hpull_wide',   name:'Horizontale Zugbewegung breit', muscle:'Rücken',   sets:2, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
+      examples:['Rudern breit Kabelzug','Rudern breit KH','Rudern breit LH','Rudermaschine breit brustgestützt','T-Bar Rudern']},
+    {id:'lateral',      name:'Seithebevariation',             muscle:'Schulter', sets:3, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight',
+      examples:['Seitheben KH','Seitheben Kabelzug','Seitheben Maschine']},
+    {id:'legcurl',      name:'Beinbeuger Isolation',          muscle:'Beine',    sets:2, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
+      examples:['Beinbeuger sitzend','Beinbeuger liegend']},
+    {id:'biceps',       name:'Bizeps Isolation',              muscle:'Arme',     sets:2, repMin:6,  repMax:10, unit:'kg', inc:1,   type:'weight',
+      examples:['Preacher Curls Maschine','Preacher Curls KH','Kurzhantelcurls stehend','Kurzhantelcurls sitzend','Curls am Kabelzug']}
   ]},
   B: { name:'Ganzkörper B', exercises: [
-    {id:'deadlift_var', name:'Kreuzhebevariation',            muscle:'Rücken',   sets:3, repMin:5,  repMax:8,  unit:'kg', inc:5,   type:'weight'},
-    {id:'vpress',       name:'Vertikale Druckbewegung',       muscle:'Schulter', sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight'},
-    {id:'legpress',     name:'Beinpresse Variation',          muscle:'Beine',    sets:2, repMin:6,  repMax:10, unit:'kg', inc:5,   type:'weight'},
-    {id:'hpull_close',  name:'Horizontale Zugbewegung eng',   muscle:'Rücken',   sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight'},
-    {id:'fly',          name:'Flyvariante',                   muscle:'Brust',    sets:2, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight'},
-    {id:'reardelt',     name:'Hintere Schulter Isolation',    muscle:'Schulter', sets:2, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight'},
-    {id:'triceps',      name:'Trizeps Isolation',             muscle:'Arme',     sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight'}
+    {id:'deadlift_var', name:'Kreuzhebevariation',            muscle:'Rücken',   sets:3, repMin:5,  repMax:8,  unit:'kg', inc:5,   type:'weight',
+      examples:['Konventionelles Kreuzheben','Rumänisches Kreuzheben','Stiff Leg Deadlift']},
+    {id:'vpress',       name:'Vertikale Druckbewegung',       muscle:'Schulter', sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight',
+      examples:['Schulterdrücken KH','Schulterdrücken LH','Schulterdrücken Maschine']},
+    {id:'legpress',     name:'Beinpresse Variation',          muscle:'Beine',    sets:2, repMin:6,  repMax:10, unit:'kg', inc:5,   type:'weight',
+      examples:['Liegende Beinpresse','Sitzende Beinpresse','45°-Beinpresse','Einbeinige Beinpresse']},
+    {id:'hpull_close',  name:'Horizontale Zugbewegung eng',   muscle:'Rücken',   sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
+      examples:['Rudern eng Kabelzug','Rudern eng KH','Rudern eng LH','Rudermaschine eng brustgestützt']},
+    {id:'fly',          name:'Flyvariante',                   muscle:'Brust',    sets:2, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight',
+      examples:['Fly am Kabelzug','Butterflymaschine','Fly mit Kurzhanteln']},
+    {id:'reardelt',     name:'Hintere Schulter Isolation',    muscle:'Schulter', sets:2, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight',
+      examples:['Rear Delt Row','Reverse Butterfly am Kabelzug','Reverse Butterfly Maschine']},
+    {id:'triceps',      name:'Trizeps Isolation',             muscle:'Arme',     sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
+      examples:['Trizepsdrücken Überkopf Kabel','Trizepsdrücken Überkopf KH','Pushdowns am Seil','Katana Extensions','French Press','Skull Crusher']}
   ]},
   C: { name:'Ganzkörper C', exercises: [
-    {id:'incline',      name:'Schrägbankvariante',            muscle:'Brust',    sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight'},
-    {id:'vpull_close',  name:'Vertikale Zugbewegung eng',     muscle:'Rücken',   sets:3, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight'},
-    {id:'legext',       name:'Beinstrecker',                  muscle:'Beine',    sets:2, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight'},
-    {id:'lateral',      name:'Seithebevariation',             muscle:'Schulter', sets:3, repMin:10, repMax:12, unit:'kg', inc:1,   type:'weight'},
-    {id:'biceps',       name:'Bizeps Isolation',              muscle:'Arme',     sets:2, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight'},
-    {id:'calves',       name:'Waden Isolation',               muscle:'Waden',    sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight'},
-    {id:'abs',          name:'Bauch Isolation',               muscle:'Core',     sets:3, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight'}
+    {id:'incline',      name:'Schrägbankvariante',            muscle:'Brust',    sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight',
+      examples:['Schrägbankdrücken LH','Schrägbankdrücken KH','Schrägbankdrücken Maschine']},
+    {id:'vpull_close',  name:'Vertikale Zugbewegung eng',     muscle:'Rücken',   sets:3, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight',
+      examples:['Chin Ups','Latziehen eng','Latzugmaschine eng','High Row mit engem Griff']},
+    {id:'legext',       name:'Beinstrecker',                  muscle:'Beine',    sets:2, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
+      examples:['Beinstrecker Maschine']},
+    {id:'lateral',      name:'Seithebevariation',             muscle:'Schulter', sets:3, repMin:10, repMax:12, unit:'kg', inc:1,   type:'weight',
+      examples:['Seitheben KH','Seitheben Kabelzug','Seitheben Maschine']},
+    {id:'biceps',       name:'Bizeps Isolation',              muscle:'Arme',     sets:2, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight',
+      examples:['Preacher Curls Maschine','Preacher Curls KH','Kurzhantelcurls stehend','Kurzhantelcurls sitzend','Curls am Kabelzug']},
+    {id:'calves',       name:'Waden Isolation',               muscle:'Waden',    sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
+      examples:['Wadenheben stehend','Wadenheben sitzend']},
+    {id:'abs',          name:'Bauch Isolation',               muscle:'Core',     sets:3, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight',
+      examples:['Cable Crunch','Crunches an der Maschine','Hanging Leg Raise','Ab Wheel']}
   ]}
 };
 const PLAN_ORDER = ['A','B','C'];
@@ -341,6 +365,7 @@ function startWorkout(variant){
       return {
         id: ex.id, name: ex.name, muscle: ex.muscle, unit: ex.unit, type: ex.type,
         repMin: ex.repMin, repMax: ex.repMax, inc: ex.inc,
+        examples: ex.examples || [],
         variant: DATA.variants[ex.id] || '',
         suggestNote: sugg ? sugg.note : 'Erster Eintrag — trag deine Variante und dein Startgewicht ein.',
         sets: Array.from({length: ex.sets}, () => ({weight: (ex.type === 'weight' && sugg) ? sugg.weight : null, reps: null, done: false}))
@@ -570,6 +595,7 @@ function renderWorkoutView(){
       <div class="exwrap">
         <div class="exname">${ex.name}</div>
         <input class="variantinput" type="text" placeholder="Deine Variante (z. B. Langhantel, Maschine …)" value="${esc(ex.variant || '')}" data-variant-exi="${exi}">
+        ${ex.examples && ex.examples.length ? `<div class="examples">${ex.examples.map(x => `<button class="ex-chip" data-action="pick-example" data-exi="${exi}" data-value="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
         <div class="exmeta">${ex.muscle} · Ziel ${ex.repMin}–${ex.repMax} ${ex.type === 'time' ? ex.unit : 'Wdh.'}</div>
         <div class="lastnote">${ex.suggestNote}</div>
         ${ex.sets.map((s, si) => ex.type === 'weight' ? `
@@ -755,6 +781,13 @@ function attachHandlers(){
   });
   document.querySelectorAll('[data-action="rest"]').forEach(b => {
     b.onclick = () => startTimer(+b.dataset.secs);
+  });
+  document.querySelectorAll('[data-action="pick-example"]').forEach(b => {
+    b.onclick = () => {
+      const exi = +b.dataset.exi;
+      ACTIVE.exercises[exi].variant = b.dataset.value;
+      render();
+    };
   });
   const finishBtn = document.querySelector('[data-action="finish-workout"]');
   if(finishBtn) finishBtn.onclick = finishWorkout;
