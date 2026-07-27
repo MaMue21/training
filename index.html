@@ -386,8 +386,9 @@ function suggestWeight(exDef){
     if(doneSets.length === 0) return null;
     const allTop = doneSets.length >= exDef.sets && doneSets.every(s => s.reps >= exDef.repMax);
     const maxWeight = Math.max(...doneSets.map(s => s.weight));
-    if(allTop && exDef.inc > 0) return {weight: Math.round((maxWeight + exDef.inc) * 100) / 100, note:`Letztes Mal${varTxt}: ${maxWeight} kg × ${exDef.repMax}+. Steigerung empfohlen.`};
-    return {weight: maxWeight, note:`Letztes Mal${varTxt}: ${maxWeight} kg — Ziel: ${exDef.repMax} Wdh. in jedem Satz.`};
+    const unitLbl = isPerSide(last.ex.variant) ? 'kg/Hantel' : 'kg';
+    if(allTop && exDef.inc > 0) return {weight: Math.round((maxWeight + exDef.inc) * 100) / 100, note:`Letztes Mal${varTxt}: ${maxWeight} ${unitLbl} × ${exDef.repMax}+. Steigerung empfohlen.`};
+    return {weight: maxWeight, note:`Letztes Mal${varTxt}: ${maxWeight} ${unitLbl} — Ziel: ${exDef.repMax} Wdh. in jedem Satz.`};
   } else {
     const doneSets = last.ex.sets.filter(s => s.done && s.reps != null);
     if(doneSets.length === 0) return null;
@@ -398,18 +399,38 @@ function suggestWeight(exDef){
 function epley1RM(weight, reps){
   return Math.round(weight * (1 + reps/30) * 10) / 10;
 }
+
+/* Erkennt Kurzhantel-Varianten aus dem freien Text.
+   Einarmige Übungen (1-Arm, einarmig) sind ausgenommen — dort bewegt man
+   tatsächlich nur eine Hantel und das Eingabegewicht ist bereits die Gesamt-Last. */
+function isPerSide(variantText){
+  if(!variantText) return false;
+  const t = String(variantText).toLowerCase();
+  if(/1-arm|einarmig|single-arm|einbeinig/.test(t)) return false;
+  return /(^|[\s\-\/(])(kh|kurzhantel[a-zäöüß]*|dumbbell[a-z]*)([\s\-\/)]|$)/i.test(t);
+}
+/* Umrechnung: gespeichertes „pro Hantel"-Gewicht → effektive Gesamt-Last für e1RM/Progression-Check */
+function effWeight(variantText, weight){
+  if(weight == null) return null;
+  return isPerSide(variantText) ? weight * 2 : weight;
+}
 function personalBests(){
   const pbs = {};
   DATA.sessions.forEach(s => {
     s.exercises.forEach(ex => {
       const isWeight = ex.type ? ex.type === 'weight' : true;
+      const perSide = isPerSide(ex.variant);
       ex.sets.forEach(st => {
         if(!st.done) return;
         if(isWeight){
           if(st.weight == null || st.reps == null) return;
-          const e1rm = epley1RM(st.weight, st.reps);
+          const totalWeight = perSide ? st.weight * 2 : st.weight;
+          const e1rm = epley1RM(totalWeight, st.reps);
           if(!pbs[ex.id] || e1rm > pbs[ex.id].value){
-            pbs[ex.id] = {value: e1rm, display: `${e1rm} kg (e1RM)`, sub: `${st.weight} kg × ${st.reps}`, name: ex.name, date: s.date};
+            const sub = perSide
+              ? `${st.weight} kg/Hantel × ${st.reps} (${totalWeight} kg gesamt)`
+              : `${st.weight} kg × ${st.reps}`;
+            pbs[ex.id] = {value: e1rm, display: `${e1rm} kg (e1RM)`, sub, name: ex.name, date: s.date};
           }
         } else {
           if(st.reps == null) return;
@@ -734,12 +755,12 @@ function renderWorkoutView(){
         <div class="exname">${ex.name}</div>
         <input class="variantinput" type="text" placeholder="Deine Variante (z. B. Langhantel, Maschine …)" value="${esc(ex.variant || '')}" data-variant-exi="${exi}">
         ${ex.examples && ex.examples.length ? `<div class="examples">${ex.examples.map(x => `<button class="ex-chip" data-action="pick-example" data-exi="${exi}" data-value="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
-        <div class="exmeta">${ex.muscle} · Ziel ${ex.repMin}–${ex.repMax} ${ex.type === 'time' ? ex.unit : 'Wdh.'}</div>
+        <div class="exmeta">${ex.muscle} · Ziel ${ex.repMin}–${ex.repMax} ${ex.type === 'time' ? ex.unit : 'Wdh.'}${isPerSide(ex.variant) ? ' · je Hantel' : ''}</div>
         <div class="lastnote">${ex.suggestNote}</div>
         ${ex.sets.map((s, si) => ex.type === 'weight' ? `
           <div class="setrow">
             <div class="setnum">${si+1}</div>
-            <input type="number" inputmode="decimal" placeholder="kg" value="${s.weight ?? ''}" data-set-field="weight" data-exi="${exi}" data-si="${si}">
+            <input type="number" inputmode="decimal" placeholder="${isPerSide(ex.variant) ? 'kg/H' : 'kg'}" value="${s.weight ?? ''}" data-set-field="weight" data-exi="${exi}" data-si="${si}">
             <input type="number" inputmode="numeric" placeholder="Wdh" value="${s.reps ?? ''}" data-set-field="reps" data-exi="${exi}" data-si="${si}">
             <button class="checkbtn ${s.done ? 'checked' : ''}" data-action="toggle-set" data-exi="${exi}" data-si="${si}">${s.done ? '✓' : ''}</button>
           </div>
@@ -822,8 +843,10 @@ function renderHistory(){
             const done = ex.sets.filter(s => s.done);
             if(done.length === 0) return '';
             const isWeight = ex.type ? ex.type === 'weight' : true;
+            const perSide = isPerSide(ex.variant);
+            const unitLbl = perSide ? 'kg/H' : 'kg';
             const setsStr = isWeight
-              ? done.map(s => `${s.weight}kg×${s.reps}`).join(', ')
+              ? done.map(s => `${s.weight}${unitLbl}×${s.reps}`).join(', ')
               : done.map(s => `${s.reps} ${ex.unit}`).join(', ');
             const varTxt = ex.variant ? ` — ${esc(ex.variant)}` : '';
             return `${ex.name}${varTxt}: ${setsStr}`;
@@ -907,6 +930,7 @@ function attachHandlers(){
 
   document.querySelectorAll('[data-variant-exi]').forEach(inp => {
     inp.oninput = () => { ACTIVE.exercises[+inp.dataset.variantExi].variant = inp.value; };
+    inp.onchange = () => { render(); };
   });
   document.querySelectorAll('[data-set-field]').forEach(inp => {
     inp.oninput = () => {
