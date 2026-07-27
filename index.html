@@ -152,6 +152,15 @@
   }
   .toast.show{opacity:1;}
   .backlink{color:var(--text-dim); font-size:13px; margin-bottom:14px; display:inline-block;}
+  .summary-hero{text-align:center; padding:26px 18px 22px;}
+  .summary-tag{font-size:10px; text-transform:uppercase; letter-spacing:.14em; color:var(--accent); font-weight:700; margin-bottom:10px;}
+  .summary-title{font-size:22px; margin:0 0 4px;}
+  .summary-date{font-size:12px; color:var(--text-dim); margin-bottom:18px; font-family:var(--mono);}
+  .summary-big{font-size:44px; font-weight:800; color:var(--accent); font-family:var(--sans); letter-spacing:-.02em; line-height:1;}
+  .summary-biglabel{font-size:12px; color:var(--text-dim); margin-top:6px; margin-bottom:16px;}
+  .summary-metarow{display:flex; justify-content:center; gap:36px; padding-top:16px; border-top:1px solid var(--line);}
+  .summary-metarow .metaval{font-size:20px; font-weight:700; font-family:var(--mono);}
+  .summary-metarow .metalbl{font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.05em; margin-top:2px;}
 </style>
 </head>
 <body>
@@ -369,31 +378,73 @@ function cycleVolume(info){
   }));
   return vol;
 }
-function lastSessionFor(exerciseId){
+function normVariant(v){
+  return (v || '').trim().toLowerCase();
+}
+/* Sucht die letzte Session mit GENAU dieser Variante (z. B. „Brustpresse Maschine").
+   Nur so ist die Progression sauber — Maschine und Freihantel sind nicht dieselbe Kraftkurve. */
+function lastSessionFor(exerciseId, variantNorm){
   for(let i = DATA.sessions.length - 1; i >= 0; i--){
     const s = DATA.sessions[i];
-    const ex = s.exercises.find(e => e.id === exerciseId);
+    const ex = s.exercises.find(e => e.id === exerciseId && normVariant(e.variant) === variantNorm);
     if(ex && ex.sets.some(st => st.done)) return {session: s, ex};
   }
   return null;
 }
-function suggestWeight(exDef){
-  const last = lastSessionFor(exDef.id);
-  if(!last) return null;
-  const varTxt = last.ex.variant ? ` (${esc(last.ex.variant)})` : '';
+/* Für den Fall, dass es zur aktuellen Variante noch keinen eigenen Verlauf gibt:
+   findet die letzte Session mit einer ANDEREN Variante desselben Bewegungsmusters,
+   rein zur Information — nie als Gewichtsvorschlag. */
+function lastSessionForAnyVariant(exerciseId, excludeVariantNorm){
+  for(let i = DATA.sessions.length - 1; i >= 0; i--){
+    const s = DATA.sessions[i];
+    const ex = s.exercises.find(e => e.id === exerciseId && normVariant(e.variant) !== excludeVariantNorm);
+    if(ex && ex.sets.some(st => st.done)) return {session: s, ex};
+  }
+  return null;
+}
+function suggestWeight(exDef, variantText){
+  const vNorm = normVariant(variantText);
+  const same = lastSessionFor(exDef.id, vNorm);
   if(exDef.type === 'weight'){
-    const doneSets = last.ex.sets.filter(s => s.done && s.weight != null && s.reps != null);
-    if(doneSets.length === 0) return null;
-    const allTop = doneSets.length >= exDef.sets && doneSets.every(s => s.reps >= exDef.repMax);
-    const maxWeight = Math.max(...doneSets.map(s => s.weight));
-    const unitLbl = isPerSide(last.ex.variant) ? 'kg/Hantel' : 'kg';
-    if(allTop && exDef.inc > 0) return {weight: Math.round((maxWeight + exDef.inc) * 100) / 100, note:`Letztes Mal${varTxt}: ${maxWeight} ${unitLbl} × ${exDef.repMax}+. Steigerung empfohlen.`};
-    return {weight: maxWeight, note:`Letztes Mal${varTxt}: ${maxWeight} ${unitLbl} — Ziel: ${exDef.repMax} Wdh. in jedem Satz.`};
+    if(same){
+      const doneSets = same.ex.sets.filter(s => s.done && s.weight != null && s.reps != null);
+      if(doneSets.length){
+        const allTop = doneSets.length >= exDef.sets && doneSets.every(s => s.reps >= exDef.repMax);
+        const maxWeight = Math.max(...doneSets.map(s => s.weight));
+        const unitLbl = isPerSide(variantText) ? 'kg/Hantel' : 'kg';
+        if(allTop && exDef.inc > 0) return {weight: Math.round((maxWeight + exDef.inc) * 100) / 100, note:`Letztes Mal: ${maxWeight} ${unitLbl} × ${exDef.repMax}+. Steigerung empfohlen.`};
+        return {weight: maxWeight, note:`Letztes Mal: ${maxWeight} ${unitLbl} — Ziel: ${exDef.repMax} Wdh. in jedem Satz.`};
+      }
+    }
+    const other = lastSessionForAnyVariant(exDef.id, vNorm);
+    if(other){
+      const doneSets = other.ex.sets.filter(s => s.done && s.weight != null);
+      if(doneSets.length){
+        const w = Math.max(...doneSets.map(s => s.weight));
+        const unitLbl = isPerSide(other.ex.variant) ? 'kg/Hantel' : 'kg';
+        const otherName = other.ex.variant ? esc(other.ex.variant) : 'anderer Variante';
+        return {weight:null, note:`Neue Variante — nicht direkt vergleichbar (zuletzt ${otherName}: ${w} ${unitLbl}). Arbeitsgewicht neu antasten.`};
+      }
+    }
+    return null;
   } else {
-    const doneSets = last.ex.sets.filter(s => s.done && s.reps != null);
-    if(doneSets.length === 0) return null;
-    const maxVal = Math.max(...doneSets.map(s => s.reps));
-    return {weight:null, note:`Letztes Mal${varTxt}: ${maxVal} ${exDef.unit} — Ziel: ${exDef.repMax}+ in jedem Satz.`};
+    if(same){
+      const doneSets = same.ex.sets.filter(s => s.done && s.reps != null);
+      if(doneSets.length){
+        const maxVal = Math.max(...doneSets.map(s => s.reps));
+        return {weight:null, note:`Letztes Mal: ${maxVal} ${exDef.unit} — Ziel: ${exDef.repMax}+ in jedem Satz.`};
+      }
+    }
+    const other = lastSessionForAnyVariant(exDef.id, vNorm);
+    if(other){
+      const doneSets = other.ex.sets.filter(s => s.done && s.reps != null);
+      if(doneSets.length){
+        const maxVal = Math.max(...doneSets.map(s => s.reps));
+        const otherName = other.ex.variant ? esc(other.ex.variant) : 'anderer Variante';
+        return {weight:null, note:`Neue Variante (zuletzt ${otherName}: ${maxVal} ${exDef.unit}). Ziel: ${exDef.repMax}+ in jedem Satz.`};
+      }
+    }
+    return null;
   }
 }
 function epley1RM(weight, reps){
@@ -420,22 +471,23 @@ function personalBests(){
     s.exercises.forEach(ex => {
       const isWeight = ex.type ? ex.type === 'weight' : true;
       const perSide = isPerSide(ex.variant);
+      const key = ex.id + '::' + normVariant(ex.variant);
       ex.sets.forEach(st => {
         if(!st.done) return;
         if(isWeight){
           if(st.weight == null || st.reps == null) return;
           const totalWeight = perSide ? st.weight * 2 : st.weight;
           const e1rm = epley1RM(totalWeight, st.reps);
-          if(!pbs[ex.id] || e1rm > pbs[ex.id].value){
+          if(!pbs[key] || e1rm > pbs[key].value){
             const sub = perSide
               ? `${st.weight} kg/Hantel × ${st.reps} (${totalWeight} kg gesamt)`
               : `${st.weight} kg × ${st.reps}`;
-            pbs[ex.id] = {value: e1rm, display: `${e1rm} kg (e1RM)`, sub, name: ex.name, date: s.date};
+            pbs[key] = {value: e1rm, display: `${e1rm} kg (e1RM)`, sub, name: ex.name, variant: ex.variant, date: s.date};
           }
         } else {
           if(st.reps == null) return;
-          if(!pbs[ex.id] || st.reps > pbs[ex.id].value){
-            pbs[ex.id] = {value: st.reps, display: `${st.reps} ${ex.unit}`, sub: '', name: ex.name, date: s.date};
+          if(!pbs[key] || st.reps > pbs[key].value){
+            pbs[key] = {value: st.reps, display: `${st.reps} ${ex.unit}`, sub: '', name: ex.name, variant: ex.variant, date: s.date};
           }
         }
       });
@@ -449,10 +501,60 @@ function toast(msg){
   setTimeout(() => t.classList.remove('show'), 1800);
 }
 
+function workoutStats(exercises){
+  const kgByMuscle = {};
+  MUSCLES.forEach(m => { kgByMuscle[m] = 0; });
+  let totalKg = 0, totalReps = 0, totalSets = 0;
+  exercises.forEach(ex => {
+    const perSide = isPerSide(ex.variant);
+    ex.sets.forEach(s => {
+      if(!s.done) return;
+      totalSets++;
+      if(ex.type === 'weight' && s.weight != null && s.reps != null){
+        const w = perSide ? s.weight * 2 : s.weight;
+        const kg = w * s.reps;
+        if(kgByMuscle[ex.muscle] != null) kgByMuscle[ex.muscle] += kg;
+        totalKg += kg;
+        totalReps += s.reps;
+      } else if(s.reps != null){
+        totalReps += s.reps;
+      }
+    });
+  });
+  return { kgByMuscle, totalKg, totalReps, totalSets };
+}
+function fmtKg(n){
+  if(n >= 1000) return (n/1000).toFixed(1).replace('.', ',') + ' t';
+  return Math.round(n) + ' kg';
+}
+function fmtNum(n){
+  return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+/* Notifications (best effort — iOS erlaubt Web-Push nur eingeschränkt) */
+function ensureNotificationPermission(){
+  if(!('Notification' in window)) return Promise.resolve(false);
+  if(Notification.permission === 'granted') return Promise.resolve(true);
+  if(Notification.permission === 'denied') return Promise.resolve(false);
+  try{
+    const p = Notification.requestPermission();
+    return (p && p.then) ? p.then(x => x === 'granted') : Promise.resolve(p === 'granted');
+  }catch(e){ return Promise.resolve(false); }
+}
+function fireTimerNotification(){
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  const opts = { body:'Nächster Satz kann starten.', icon:'./icon.png', badge:'./icon.png', tag:'rest-timer', renotify:true, silent:false };
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.ready.then(reg => reg.showNotification('Pause vorbei', opts).catch(()=>{})).catch(()=>{});
+  } else {
+    try{ new Notification('Pause vorbei', opts); }catch(e){}
+  }
+}
+
 /* ============ STATE / ROUTING ============ */
 let VIEW = 'home';
 let ACTIVE = null;
-let TIMER = { running:false, remaining:0, total:0, handle:null };
+let TIMER = { endTime:0, total:0, handle:null, audio:null, url:null, beeped:false };
 
 function setView(v){ VIEW = v; render(); }
 
@@ -466,14 +568,19 @@ function startWorkout(program, variant, length){
   ACTIVE = {
     program, variant, length, name: dispName, date: todayISO(),
     exercises: filtered.map(ex => {
-      const sugg = suggestWeight(ex);
+      const initialVariant = DATA.variants[ex.id] || '';
+      const sugg = suggestWeight(ex, initialVariant);
+      const hasWeightSugg = ex.type === 'weight' && sugg && sugg.weight != null;
       return {
         id: ex.id, name: ex.name, muscle: ex.muscle, unit: ex.unit, type: ex.type,
-        repMin: ex.repMin, repMax: ex.repMax, inc: ex.inc,
+        repMin: ex.repMin, repMax: ex.repMax, inc: ex.inc, plannedSets: ex.sets,
         examples: ex.examples || [],
-        variant: DATA.variants[ex.id] || '',
-        suggestNote: sugg ? sugg.note : 'Erster Eintrag — trag deine Variante und dein Startgewicht ein.',
-        sets: Array.from({length: ex.sets}, () => ({weight: (ex.type === 'weight' && sugg) ? sugg.weight : null, reps: null, done: false}))
+        variant: initialVariant,
+        suggestNote: sugg ? sugg.note : (ex.type === 'weight' ? 'Erster Eintrag — trag deine Variante und dein Startgewicht ein.' : 'Erster Eintrag — leg los.'),
+        sets: Array.from({length: ex.sets}, () => ({
+          weight: hasWeightSugg ? sugg.weight : null, reps: null, done: false,
+          auto: hasWeightSugg   // von der App vorbefüllt, noch nicht vom Nutzer angefasst
+        }))
       };
     })
   };
@@ -482,10 +589,29 @@ function startWorkout(program, variant, length){
   saveData();
   setView('workout');
 }
+
+/* Wird aufgerufen, wenn sich die Variante einer Übung während des Trainings ändert
+   (Textfeld verlassen oder Beispiel-Chip getippt). Berechnet den Vorschlag neu und
+   überschreibt nur Sätze, die noch die automatische Vorbefüllung tragen — von Hand
+   eingetragene oder bereits abgehakte Sätze bleiben unangetastet. */
+function recomputeSuggestion(exi){
+  const item = ACTIVE.exercises[exi];
+  const fauxDef = { id: item.id, type: item.type, repMin: item.repMin, repMax: item.repMax, inc: item.inc, unit: item.unit, sets: item.plannedSets };
+  const sugg = suggestWeight(fauxDef, item.variant);
+  item.suggestNote = sugg ? sugg.note : (item.type === 'weight' ? 'Erster Eintrag — trag deine Variante und dein Startgewicht ein.' : 'Erster Eintrag — leg los.');
+  if(item.type !== 'weight') return;
+  const newWeight = (sugg && sugg.weight != null) ? sugg.weight : null;
+  item.sets.forEach(s => {
+    if(s.done || !s.auto) return;
+    s.weight = newWeight;
+  });
+}
 function startCardio(){
   ACTIVE = { cardio:true, date: todayISO(), type:'Laufen', duration:30, distance:'', rpe:5 };
   setView('cardio');
 }
+let LAST_SUMMARY = null;
+
 function finishWorkout(){
   const hasAnySet = ACTIVE.exercises.some(ex => ex.sets.some(s => s.done));
   if(!hasAnySet){ toast('Trag mindestens einen Satz ein, bevor du abschließt.'); return; }
@@ -494,9 +620,9 @@ function finishWorkout(){
   if(!DATA.cycleStart) DATA.cycleStart = ACTIVE.date;
   saveData();
   stopTimer();
+  LAST_SUMMARY = { name: ACTIVE.name, date: ACTIVE.date, stats: workoutStats(ACTIVE.exercises) };
   ACTIVE = null;
-  setView('home');
-  toast('Training gespeichert');
+  setView('summary');
 }
 function finishCardio(){
   DATA.cardioSessions.push({ date: ACTIVE.date, type: ACTIVE.type, duration: ACTIVE.duration, distance: ACTIVE.distance, rpe: ACTIVE.rpe });
@@ -509,41 +635,103 @@ function cancelActive(){
   if(confirm('Aktuelle Einheit verwerfen?')){ ACTIVE = null; stopTimer(); setView('home'); }
 }
 
-/* ============ REST TIMER ============ */
+/* ============ REST TIMER ============
+   Der Timer wird über einen absoluten Endzeitpunkt (Date.now()+dauer) gesteuert,
+   damit er auch dann korrekt weiterläuft, wenn iOS die Seite pausiert.
+   Für den Alarm generieren wir eine WAV-Datei mit Stille + Beep am Ende und lassen
+   sie als HTML-Audio-Element abspielen — HTMLAudio spielt auf iOS auch bei
+   gesperrtem Screen weiter, solange der Silent-Mode-Schalter aus ist. */
+
+function makeTimerWav(seconds){
+  const sampleRate = 16000;                     // reicht für 880-Hz-Beep, hält Datei klein
+  const totalSamples = Math.floor(sampleRate * (seconds + 0.6));
+  const bufferSize = 44 + totalSamples * 2;
+  const buffer = new ArrayBuffer(bufferSize);
+  const view = new DataView(buffer);
+  const w = (o,s) => { for(let i=0;i<s.length;i++) view.setUint8(o+i, s.charCodeAt(i)); };
+  w(0,'RIFF'); view.setUint32(4, 36+totalSamples*2, true); w(8,'WAVE'); w(12,'fmt ');
+  view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,1,true);
+  view.setUint32(24,sampleRate,true); view.setUint32(28,sampleRate*2,true);
+  view.setUint16(32,2,true); view.setUint16(34,16,true);
+  w(36,'data'); view.setUint32(40, totalSamples*2, true);
+  // Stille (Buffer ist schon Null-initialisiert). Am Ende: zwei kurze Pieptöne.
+  const beepStart = Math.floor(sampleRate * seconds);
+  const beepDur = 0.5;
+  const beepSamples = Math.floor(sampleRate * beepDur);
+  for(let i=0; i<beepSamples; i++){
+    const t = i / sampleRate;
+    // Hüllkurve, zwei Impulse
+    let sig = 0;
+    if(t < 0.16 || (t > 0.24 && t < 0.4)){
+      const local = t < 0.16 ? t : t - 0.24;
+      const env = Math.min(1, local*40) * Math.min(1, (0.16-local)*40);
+      sig = Math.sin(2*Math.PI*880*t) * 0.55 * env;
+    }
+    const s = Math.max(-1, Math.min(1, sig));
+    view.setInt16(44 + (beepStart+i)*2, s * 0x7FFF, true);
+  }
+  return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+}
+
 function startTimer(seconds){
   stopTimer();
-  TIMER = {running:true, remaining:seconds, total:seconds, handle:null};
+  ensureNotificationPermission();
+  const url = makeTimerWav(seconds);
+  const audio = new Audio(url);
+  audio.preload = 'auto';
+  const playPromise = audio.play();
+  if(playPromise && playPromise.catch) playPromise.catch(() => {});
+  TIMER = {
+    endTime: Date.now() + seconds * 1000,
+    total: seconds,
+    handle: null,
+    audio, url,
+    beeped: false
+  };
   TIMER.handle = setInterval(() => {
-    TIMER.remaining--;
-    if(TIMER.remaining <= 0){
-      stopTimer();
-      beep();
-      toast('Pause vorbei!');
-    }
+    const remaining = Math.max(0, Math.ceil((TIMER.endTime - Date.now()) / 1000));
     renderTimerOnly();
-  }, 1000);
+    if(remaining <= 0){
+      if(!TIMER.beeped){
+        TIMER.beeped = true;
+        toast('Pause vorbei!');
+        fireTimerNotification();
+      }
+      stopTimer();
+      render();
+    }
+  }, 250);
   render();
 }
+
 function stopTimer(){
+  if(!TIMER) return;
   if(TIMER.handle) clearInterval(TIMER.handle);
-  TIMER = {running:false, remaining:0, total:0, handle:null};
+  if(TIMER.audio){ try{ TIMER.audio.pause(); }catch(e){} }
+  if(TIMER.url){ try{ URL.revokeObjectURL(TIMER.url); }catch(e){} }
+  TIMER = { endTime:0, total:0, handle:null, audio:null, url:null, beeped:false };
 }
-function beep(){
+
+/* Fallback-Beep für den Fall, dass die WAV-Wiedergabe blockiert wurde
+   (z. B. Silent Mode aktiv). Wird beim Zurückkehren aus dem Hintergrund ausgelöst. */
+function fallbackBeep(){
   try{
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const o = ctx.createOscillator(); const g = ctx.createGain();
     o.connect(g); g.connect(ctx.destination);
     o.frequency.value = 880; g.gain.value = 0.15;
-    o.start(); setTimeout(() => {o.stop(); ctx.close();}, 350);
+    o.start(); setTimeout(() => { o.stop(); ctx.close(); }, 350);
   }catch(e){}
 }
+
 function renderTimerOnly(){
   const el = document.getElementById('timerText');
   const ring = document.getElementById('timerRing');
-  if(!el || !ring) return;
-  const mm = Math.floor(TIMER.remaining/60), ss = TIMER.remaining%60;
+  if(!el || !ring || !TIMER.total) return;
+  const remaining = Math.max(0, Math.ceil((TIMER.endTime - Date.now()) / 1000));
+  const mm = Math.floor(remaining/60), ss = remaining%60;
   el.textContent = `${mm}:${String(ss).padStart(2,'0')}`;
-  const pct = TIMER.total > 0 ? TIMER.remaining/TIMER.total : 0;
+  const pct = TIMER.total > 0 ? remaining/TIMER.total : 0;
   const circ = 2*Math.PI*26;
   ring.style.strokeDashoffset = circ*(1-pct);
 }
@@ -555,6 +743,7 @@ function render(){
   if(ACTIVE && ACTIVE.cardio) body = renderCardioView();
   else if(ACTIVE) body = renderWorkoutView();
   else if(VIEW === 'home') body = renderHome();
+  else if(VIEW === 'summary') body = renderSummary();
   else if(VIEW === 'history') body = renderHistory();
   else if(VIEW === 'progress') body = renderProgress();
   else if(VIEW === 'data') body = renderDataView();
@@ -565,7 +754,7 @@ function render(){
       <div class="streak">${ICON_FLAME}${streakCycles()} Zyklen</div>
     </header>
     <main>${body}</main>
-    ${ACTIVE ? '' : renderTabbar()}
+    ${(ACTIVE || VIEW === 'summary') ? '' : renderTabbar()}
   `;
   attachHandlers();
   if(TIMER.total > 0) renderTimerOnly();
@@ -784,8 +973,9 @@ function renderWorkoutView(){
 
 function renderTimer(){
   const circ = 2*Math.PI*26;
-  const pct = TIMER.total > 0 ? TIMER.remaining/TIMER.total : 0;
-  const mm = Math.floor(TIMER.remaining/60), ss = TIMER.remaining%60;
+  const remaining = Math.max(0, Math.ceil((TIMER.endTime - Date.now()) / 1000));
+  const pct = TIMER.total > 0 ? remaining/TIMER.total : 0;
+  const mm = Math.floor(remaining/60), ss = remaining%60;
   return `
     <div class="timerwrap">
       <svg width="64" height="64" viewBox="0 0 64 64">
@@ -825,6 +1015,46 @@ function renderCardioView(){
       <input type="number" inputmode="numeric" min="1" max="10" value="${a.rpe}" data-cardio-field="rpe">
     </div>
     <button class="btn" data-action="finish-cardio">Einheit speichern</button>
+  `;
+}
+
+function renderSummary(){
+  if(!LAST_SUMMARY){ VIEW = 'home'; return renderHome(); }
+  const {name, date, stats} = LAST_SUMMARY;
+  const entries = MUSCLES
+    .map(m => ({ muscle: m, kg: stats.kgByMuscle[m] || 0 }))
+    .filter(e => e.kg > 0)
+    .sort((a,b) => b.kg - a.kg);
+  const maxKg = entries.length ? entries[0].kg : 1;
+
+  return `
+    <div class="card summary-hero">
+      <div class="summary-tag">Session abgeschlossen</div>
+      <h2 class="summary-title">${esc(name)}</h2>
+      <div class="summary-date">${fmtDate(date)}</div>
+      ${stats.totalKg > 0 ? `
+        <div class="summary-big">${fmtKg(stats.totalKg)}</div>
+        <div class="summary-biglabel">gesamtes Volumen bewegt</div>
+      ` : ''}
+      <div class="summary-metarow">
+        <div><div class="metaval">${stats.totalSets}</div><div class="metalbl">Sätze</div></div>
+        <div><div class="metaval">${fmtNum(stats.totalReps)}</div><div class="metalbl">Wiederholungen</div></div>
+      </div>
+    </div>
+    ${entries.length ? `
+    <div class="card">
+      <h2 class="cardlabel">Volumen pro Muskelgruppe</h2>
+      <div class="sub">Gewicht × Wiederholungen · gerundet</div>
+      ${entries.map(e => {
+        const pct = Math.round((e.kg / maxKg) * 100);
+        return `<div class="vol-row">
+          <div class="vol-label">${e.muscle}</div>
+          <div class="vol-bar-bg"><div class="vol-bar-fill" style="width:${pct}%"></div></div>
+          <div class="vol-count">${fmtKg(e.kg)}</div>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
+    <button class="btn" data-action="close-summary">Fertig</button>
   `;
 }
 
@@ -868,12 +1098,13 @@ function renderProgress(){
   return `
     <div class="card">
       <h2 class="cardlabel">Persönliche Bestleistungen</h2>
-      <div class="sub">Bestwerte pro Bewegungsmuster (variantenübergreifend) · geschätztes 1RM nach Epley</div>
+      <div class="sub">Bestwert pro Übung UND Variante · Maschine und Freihantel werden getrennt geführt · geschätztes 1RM nach Epley</div>
       ${ids.length === 0 ? '<div class="empty">Noch keine Daten.</div>' : `
       <table class="pbtable">
         ${ids.map(id => {
           const pb = pbs[id];
-          return `<tr><td>${pb.name}<br><span style="color:var(--text-dim); font-size:11px;">${pb.sub ? pb.sub + ' · ' : ''}${fmtDate(pb.date)}</span></td><td>${pb.display}</td></tr>`;
+          const title = pb.variant ? `${esc(pb.name)} <span style="color:var(--text-dim);">· ${esc(pb.variant)}</span>` : esc(pb.name);
+          return `<tr><td>${title}<br><span style="color:var(--text-dim); font-size:11px;">${pb.sub ? pb.sub + ' · ' : ''}${fmtDate(pb.date)}</span></td><td>${pb.display}</td></tr>`;
         }).join('')}
       </table>`}
     </div>
@@ -930,13 +1161,14 @@ function attachHandlers(){
 
   document.querySelectorAll('[data-variant-exi]').forEach(inp => {
     inp.oninput = () => { ACTIVE.exercises[+inp.dataset.variantExi].variant = inp.value; };
-    inp.onchange = () => { render(); };
+    inp.onchange = () => { recomputeSuggestion(+inp.dataset.variantExi); render(); };
   });
   document.querySelectorAll('[data-set-field]').forEach(inp => {
     inp.oninput = () => {
       const exi = +inp.dataset.exi, si = +inp.dataset.si, field = inp.dataset.setField;
       const val = inp.value === '' ? null : parseFloat(inp.value);
       ACTIVE.exercises[exi].sets[si][field] = val;
+      if(field === 'weight') ACTIVE.exercises[exi].sets[si].auto = false;
     };
   });
   document.querySelectorAll('[data-action="toggle-set"]').forEach(b => {
@@ -954,11 +1186,17 @@ function attachHandlers(){
     b.onclick = () => {
       const exi = +b.dataset.exi;
       ACTIVE.exercises[exi].variant = b.dataset.value;
+      recomputeSuggestion(exi);
       render();
     };
   });
   const finishBtn = document.querySelector('[data-action="finish-workout"]');
   if(finishBtn) finishBtn.onclick = finishWorkout;
+  const closeSummaryBtn = document.querySelector('[data-action="close-summary"]');
+  if(closeSummaryBtn) closeSummaryBtn.onclick = () => {
+    LAST_SUMMARY = null;
+    setView('home');
+  };
 
   document.querySelectorAll('[data-cardio-field]').forEach(inp => {
     inp.oninput = () => { ACTIVE[inp.dataset.cardioField] = inp.value; };
@@ -1015,6 +1253,23 @@ function attachHandlers(){
 }
 
 render();
+
+/* Wenn die App aus dem Hintergrund/gesperrten Zustand zurückkehrt:
+   Timer-Anzeige aktualisieren und Fallback-Beep abspielen, falls der WAV-Sound
+   blockiert wurde (z. B. Silent Mode) und der Timer inzwischen abgelaufen ist. */
+document.addEventListener('visibilitychange', () => {
+  if(!document.hidden && TIMER.total > 0){
+    const remaining = Math.max(0, Math.ceil((TIMER.endTime - Date.now()) / 1000));
+    if(remaining <= 0 && !TIMER.beeped){
+      TIMER.beeped = true;
+      fallbackBeep();
+      fireTimerNotification();
+      toast('Pause vorbei!');
+      stopTimer();
+    }
+    render();
+  }
+});
 
 /* Offline-Fähigkeit: Der Service Worker (sw.js) legt die App im Browser-Cache ab,
    sodass sie nach dem ersten Öffnen auch ganz ohne Internet startet. */
