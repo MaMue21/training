@@ -122,6 +122,8 @@
   .seg.active{background:var(--accent); color:#1a1206;}
   .seg .segsub{font-size:10px; font-weight:400; opacity:.8;}
   .progtoggle{position:relative; display:flex; background:var(--surface-2); border:1px solid var(--line); border-radius:999px; padding:4px; margin-bottom:16px;}
+  .mobilitylink{text-align:center; margin-top:12px;}
+  .mobilitylink a{color:var(--text-dim); text-decoration:none; font-size:12px;}
   .progtoggle::before{content:''; position:absolute; top:4px; bottom:4px; left:4px; width:calc(50% - 4px); background:var(--accent); border-radius:999px; transition:transform .28s cubic-bezier(.4,0,.2,1); box-shadow:0 1px 3px rgba(0,0,0,.4);}
   .progtoggle.pos-home::before{transform:translateX(100%);}
   .progtoggle .pt-btn{position:relative; z-index:1; flex:1; background:transparent; border:none; color:var(--text-dim); font-family:var(--sans); font-size:13px; font-weight:600; padding:10px 8px; display:flex; align-items:center; justify-content:center; gap:7px; cursor:pointer; transition:color .2s;}
@@ -292,7 +294,7 @@ const SCHEDULE = {1:'A', 2:null, 3:null, 4:'B', 5:null, 6:'C', 7:null};
 const MUSCLES = ['Beine','Brust','Rücken','Schulter','Arme','Waden','Core'];
 
 function loadData(){
-  const def = { sessions: [], cardioSessions: [], cycleStart: null, variants: {}, currentProgram: 'gym', currentLength: 'voll' };
+  const def = { sessions: [], cardioSessions: [], mobilitySessions: [], cycleStart: null, variants: {}, currentProgram: 'gym', currentLength: 'voll' };
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
@@ -346,7 +348,8 @@ function sessionsInCycle(startISO){
   const end = addDays(startISO, 7);
   return {
     s: DATA.sessions.filter(x => x.date >= startISO && x.date < end),
-    c: DATA.cardioSessions.filter(x => x.date >= startISO && x.date < end)
+    c: DATA.cardioSessions.filter(x => x.date >= startISO && x.date < end),
+    m: DATA.mobilitySessions.filter(x => x.date >= startISO && x.date < end)
   };
 }
 function streakCycles(){
@@ -391,17 +394,6 @@ function lastSessionFor(exerciseId, variantNorm){
   }
   return null;
 }
-/* Für den Fall, dass es zur aktuellen Variante noch keinen eigenen Verlauf gibt:
-   findet die letzte Session mit einer ANDEREN Variante desselben Bewegungsmusters,
-   rein zur Information — nie als Gewichtsvorschlag. */
-function lastSessionForAnyVariant(exerciseId, excludeVariantNorm){
-  for(let i = DATA.sessions.length - 1; i >= 0; i--){
-    const s = DATA.sessions[i];
-    const ex = s.exercises.find(e => e.id === exerciseId && normVariant(e.variant) !== excludeVariantNorm);
-    if(ex && ex.sets.some(st => st.done)) return {session: s, ex};
-  }
-  return null;
-}
 function suggestWeight(exDef, variantText){
   const vNorm = normVariant(variantText);
   const same = lastSessionFor(exDef.id, vNorm);
@@ -411,37 +403,25 @@ function suggestWeight(exDef, variantText){
       if(doneSets.length){
         const allTop = doneSets.length >= exDef.sets && doneSets.every(s => s.reps >= exDef.repMax);
         const maxWeight = Math.max(...doneSets.map(s => s.weight));
-        const unitLbl = isPerSide(variantText) ? 'kg/Hantel' : 'kg';
-        if(allTop && exDef.inc > 0) return {weight: Math.round((maxWeight + exDef.inc) * 100) / 100, note:`Letztes Mal: ${maxWeight} ${unitLbl} × ${exDef.repMax}+. Steigerung empfohlen.`};
-        return {weight: maxWeight, note:`Letztes Mal: ${maxWeight} ${unitLbl} — Ziel: ${exDef.repMax} Wdh. in jedem Satz.`};
+        const unitLbl = isPerSide(variantText) ? 'kg/H' : 'kg';
+        if(allTop && exDef.inc > 0){
+          const nextW = Math.round((maxWeight + exDef.inc) * 100) / 100;
+          return {weight: nextW, note:`Steigern: ${nextW} ${unitLbl}`};
+        }
+        return {weight: maxWeight, note:`Ziel: ${maxWeight} ${unitLbl} × ${exDef.repMax}`};
       }
     }
-    const other = lastSessionForAnyVariant(exDef.id, vNorm);
-    if(other){
-      const doneSets = other.ex.sets.filter(s => s.done && s.weight != null);
-      if(doneSets.length){
-        const w = Math.max(...doneSets.map(s => s.weight));
-        const unitLbl = isPerSide(other.ex.variant) ? 'kg/Hantel' : 'kg';
-        const otherName = other.ex.variant ? esc(other.ex.variant) : 'anderer Variante';
-        return {weight:null, note:`Neue Variante — nicht direkt vergleichbar (zuletzt ${otherName}: ${w} ${unitLbl}). Arbeitsgewicht neu antasten.`};
-      }
-    }
+    // Keine eigene Historie für genau diese Variante -> grobe, konservative
+    // Schätzung aus der Muskelgruppen-Referenzlast (siehe estimateFromMuscleGroup).
+    const est = estimateFromMuscleGroup(exDef);
+    if(est != null) return {weight: est, note:`Schätzung: ${est} kg — vorsichtig testen`};
     return null;
   } else {
     if(same){
       const doneSets = same.ex.sets.filter(s => s.done && s.reps != null);
       if(doneSets.length){
         const maxVal = Math.max(...doneSets.map(s => s.reps));
-        return {weight:null, note:`Letztes Mal: ${maxVal} ${exDef.unit} — Ziel: ${exDef.repMax}+ in jedem Satz.`};
-      }
-    }
-    const other = lastSessionForAnyVariant(exDef.id, vNorm);
-    if(other){
-      const doneSets = other.ex.sets.filter(s => s.done && s.reps != null);
-      if(doneSets.length){
-        const maxVal = Math.max(...doneSets.map(s => s.reps));
-        const otherName = other.ex.variant ? esc(other.ex.variant) : 'anderer Variante';
-        return {weight:null, note:`Neue Variante (zuletzt ${otherName}: ${maxVal} ${exDef.unit}). Ziel: ${exDef.repMax}+ in jedem Satz.`};
+        return {weight:null, note:`Ziel: ${maxVal}+ ${exDef.unit}`};
       }
     }
     return null;
@@ -465,35 +445,54 @@ function effWeight(variantText, weight){
   if(weight == null) return null;
   return isPerSide(variantText) ? weight * 2 : weight;
 }
-function personalBests(){
-  const pbs = {};
+
+/* Fortschritt pro Muskelgruppe statt pro Übung/Gerät: für jede Muskelgruppe wird
+   pro Session der beste e1RM (über alle Übungen, die diese Gruppe treffen) ermittelt.
+   „latest" = aktuelle Referenzlast, „first" = erster gemessener Wert -> Trend in %. */
+function muscleGroupStats(){
+  const byMuscle = {}; MUSCLES.forEach(m => { byMuscle[m] = []; });
   DATA.sessions.forEach(s => {
+    const sessionMax = {};
     s.exercises.forEach(ex => {
       const isWeight = ex.type ? ex.type === 'weight' : true;
+      if(!isWeight) return;
       const perSide = isPerSide(ex.variant);
-      const key = ex.id + '::' + normVariant(ex.variant);
       ex.sets.forEach(st => {
-        if(!st.done) return;
-        if(isWeight){
-          if(st.weight == null || st.reps == null) return;
-          const totalWeight = perSide ? st.weight * 2 : st.weight;
-          const e1rm = epley1RM(totalWeight, st.reps);
-          if(!pbs[key] || e1rm > pbs[key].value){
-            const sub = perSide
-              ? `${st.weight} kg/Hantel × ${st.reps} (${totalWeight} kg gesamt)`
-              : `${st.weight} kg × ${st.reps}`;
-            pbs[key] = {value: e1rm, display: `${e1rm} kg (e1RM)`, sub, name: ex.name, variant: ex.variant, date: s.date};
-          }
-        } else {
-          if(st.reps == null) return;
-          if(!pbs[key] || st.reps > pbs[key].value){
-            pbs[key] = {value: st.reps, display: `${st.reps} ${ex.unit}`, sub: '', name: ex.name, variant: ex.variant, date: s.date};
-          }
-        }
+        if(!st.done || st.weight == null || st.reps == null) return;
+        const w = perSide ? st.weight * 2 : st.weight;
+        const e1rm = epley1RM(w, st.reps);
+        if(!sessionMax[ex.muscle] || e1rm > sessionMax[ex.muscle]) sessionMax[ex.muscle] = e1rm;
       });
     });
+    Object.keys(sessionMax).forEach(m => { if(byMuscle[m]) byMuscle[m].push({date: s.date, e1rm: sessionMax[m]}); });
   });
-  return pbs;
+  const stats = {};
+  MUSCLES.forEach(m => {
+    const list = byMuscle[m].slice().sort((a, b) => a.date.localeCompare(b.date));
+    if(list.length === 0){ stats[m] = null; return; }
+    const first = list[0], latest = list[list.length - 1];
+    const trendPct = first.e1rm > 0 ? Math.round(((latest.e1rm - first.e1rm) / first.e1rm) * 100) : 0;
+    stats[m] = { first, latest, trendPct, sessions: list.length };
+  });
+  return stats;
+}
+
+/* Konservative Startgewicht-Schätzung für eine Übung ohne eigene Historie:
+   nimmt die aktuelle Referenzlast (e1RM) der Muskelgruppe, rechnet sie über die
+   Epley-Umkehrung auf die Zielwiederholungszahl der neuen Übung um und schlägt
+   davon nur die Hälfte vor — verschiedene Übungen/Geräte haben oft sehr
+   unterschiedliche Hebelverhältnisse, ein niedriger Einstieg ist der sichere Weg. */
+const MUSCLE_ESTIMATE_FACTOR = 0.5;
+function estimateFromMuscleGroup(exDef){
+  if(!exDef.muscle) return null;
+  const ms = muscleGroupStats()[exDef.muscle];
+  if(!ms) return null;
+  const targetReps = exDef.repMax || 8;
+  const rawWeight = ms.latest.e1rm / (1 + targetReps / 30);
+  const inc = exDef.inc > 0 ? exDef.inc : 2.5;
+  let est = Math.round((rawWeight * MUSCLE_ESTIMATE_FACTOR) / inc) * inc;
+  if(est < inc) est = inc;
+  return Math.round(est * 100) / 100;
 }
 function toast(msg){
   const t = document.getElementById('toast');
@@ -596,7 +595,7 @@ function startWorkout(program, variant, length){
    eingetragene oder bereits abgehakte Sätze bleiben unangetastet. */
 function recomputeSuggestion(exi){
   const item = ACTIVE.exercises[exi];
-  const fauxDef = { id: item.id, type: item.type, repMin: item.repMin, repMax: item.repMax, inc: item.inc, unit: item.unit, sets: item.plannedSets };
+  const fauxDef = { id: item.id, type: item.type, repMin: item.repMin, repMax: item.repMax, inc: item.inc, unit: item.unit, sets: item.plannedSets, muscle: item.muscle };
   const sugg = suggestWeight(fauxDef, item.variant);
   item.suggestNote = sugg ? sugg.note : (item.type === 'weight' ? 'Erster Eintrag — trag deine Variante und dein Startgewicht ein.' : 'Erster Eintrag — leg los.');
   if(item.type !== 'weight') return;
@@ -609,6 +608,11 @@ function recomputeSuggestion(exi){
 function startCardio(){
   ACTIVE = { cardio:true, date: todayISO(), type:'Laufen', duration:30, distance:'', rpe:5 };
   setView('cardio');
+}
+const MOBILITY_FOCUS = ['Ganzkörper','Hüfte','Schulter','Wirbelsäule','Knöchel/Fuß','Sonstiges'];
+function startMobility(){
+  ACTIVE = { mobility:true, date: todayISO(), focus:'Ganzkörper', duration: 10 };
+  setView('mobility');
 }
 let LAST_SUMMARY = null;
 
@@ -630,6 +634,13 @@ function finishCardio(){
   ACTIVE = null;
   setView('home');
   toast('Ausdauereinheit gespeichert');
+}
+function finishMobility(){
+  DATA.mobilitySessions.push({ date: ACTIVE.date, focus: ACTIVE.focus, duration: ACTIVE.duration });
+  saveData();
+  ACTIVE = null;
+  setView('home');
+  toast('Mobility-Einheit gespeichert');
 }
 function cancelActive(){
   if(confirm('Aktuelle Einheit verwerfen?')){ ACTIVE = null; stopTimer(); setView('home'); }
@@ -741,6 +752,7 @@ function render(){
   const app = document.getElementById('app');
   let body = '';
   if(ACTIVE && ACTIVE.cardio) body = renderCardioView();
+  else if(ACTIVE && ACTIVE.mobility) body = renderMobilityView();
   else if(ACTIVE) body = renderWorkoutView();
   else if(VIEW === 'home') body = renderHome();
   else if(VIEW === 'summary') body = renderSummary();
@@ -824,6 +836,7 @@ function renderOnboarding(){
       <button class="btn" data-action="start-workout" data-variant="A" data-length="${len}">${LENGTHS[len].label} starten (${progExerciseCount(p,'A',len)} Übungen)</button>
       <div style="height:8px"></div>
       <button class="btn secondary" data-action="start-cardio">Ausdauer loggen</button>
+      <div class="mobilitylink"><a href="#" data-action="start-mobility">+ Mobility loggen</a></div>
     </div>
     <div class="card">
       <h2 class="cardlabel">Der Split · ${PROGRAMS[p].name}</h2>
@@ -883,6 +896,7 @@ function renderHome(){
       <h2>${title}</h2>
       <div class="sub">${sub}</div>
       ${buttons}
+      <div class="mobilitylink"><a href="#" data-action="start-mobility">+ Mobility loggen</a></div>
     </div>
     <div class="card">
       <h2 class="cardlabel">Dein 7-Tage-Zyklus</h2>
@@ -913,7 +927,8 @@ function renderCycleStrip(info){
     </div>`);
   }
   return `<div class="weekgrid">${cells.join('')}</div>
-    <div class="cardiostatus">Ausdauer diesen Zyklus: ${cyc.c.length > 0 ? '<span class="ok">✓ erledigt</span>' : '– noch offen'}</div>`;
+    <div class="cardiostatus">Ausdauer diesen Zyklus: ${cyc.c.length > 0 ? '<span class="ok">✓ erledigt</span>' : '– noch offen'}</div>
+    ${cyc.m.length > 0 ? `<div class="cardiostatus">Mobility diesen Zyklus: ${cyc.m.length} Einheit${cyc.m.length > 1 ? 'en' : ''}</div>` : ''}`;
 }
 
 function renderVolume(info, program){
@@ -1017,6 +1032,25 @@ function renderCardioView(){
     <button class="btn" data-action="finish-cardio">Einheit speichern</button>
   `;
 }
+function renderMobilityView(){
+  const a = ACTIVE;
+  return `
+    <a href="#" class="backlink" data-action="cancel-active">✕ Abbrechen</a>
+    <div class="card">
+      <h2>Mobility</h2>
+      <div class="sub">${fmtDate(a.date)}</div>
+
+      <label class="field">Fokus</label>
+      <select data-mobility-field="focus">
+        ${MOBILITY_FOCUS.map(f => `<option ${a.focus === f ? 'selected' : ''}>${f}</option>`).join('')}
+      </select>
+
+      <label class="field">Dauer (Minuten)</label>
+      <input type="number" inputmode="numeric" value="${a.duration}" data-mobility-field="duration">
+    </div>
+    <button class="btn" data-action="finish-mobility">Einheit speichern</button>
+  `;
+}
 
 function renderSummary(){
   if(!LAST_SUMMARY){ VIEW = 'home'; return renderHome(); }
@@ -1061,7 +1095,8 @@ function renderSummary(){
 function renderHistory(){
   const items = [
     ...DATA.sessions.map(s => ({...s, kind:'strength'})),
-    ...DATA.cardioSessions.map(c => ({...c, kind:'cardio'}))
+    ...DATA.cardioSessions.map(c => ({...c, kind:'cardio'})),
+    ...DATA.mobilitySessions.map(m => ({...m, kind:'mobility'}))
   ].sort((a,b) => b.date.localeCompare(a.date));
   if(items.length === 0) return `<div class="card"><div class="empty">Noch keine Einheiten geloggt.</div></div>`;
   return `<div class="card">
@@ -1082,10 +1117,15 @@ function renderHistory(){
             return `${ex.name}${varTxt}: ${setsStr}`;
           }).filter(Boolean).join('<br>')}</div>
         </div>`;
-      } else {
+      } else if(it.kind === 'cardio'){
         return `<div class="histitem">
           <div class="hd"><span>Ausdauer — ${esc(it.type)}</span><span class="date">${fmtDate(it.date)}</span></div>
           <div class="detail">${esc(it.duration)} Min${it.distance ? ` · ${esc(it.distance)} km` : ''} · RPE ${esc(it.rpe)}</div>
+        </div>`;
+      } else {
+        return `<div class="histitem">
+          <div class="hd"><span>Mobility — ${esc(it.focus)}</span><span class="date">${fmtDate(it.date)}</span></div>
+          <div class="detail">${esc(it.duration)} Min</div>
         </div>`;
       }
     }).join('')}
@@ -1093,18 +1133,19 @@ function renderHistory(){
 }
 
 function renderProgress(){
-  const pbs = personalBests();
-  const ids = Object.keys(pbs);
+  const mstats = muscleGroupStats();
+  const rows = MUSCLES.map(m => ({muscle: m, s: mstats[m]})).filter(r => r.s);
   return `
     <div class="card">
-      <h2 class="cardlabel">Persönliche Bestleistungen</h2>
-      <div class="sub">Bestwert pro Übung UND Variante · Maschine und Freihantel werden getrennt geführt · geschätztes 1RM nach Epley</div>
-      ${ids.length === 0 ? '<div class="empty">Noch keine Daten.</div>' : `
+      <h2 class="cardlabel">Fortschritt pro Muskelgruppe</h2>
+      <div class="sub">Referenzlast = bestes e1RM der letzten Einheit, die diese Muskelgruppe getroffen hat — über alle Übungen und Geräte hinweg gemittelt</div>
+      ${rows.length === 0 ? '<div class="empty">Noch keine Daten.</div>' : `
       <table class="pbtable">
-        ${ids.map(id => {
-          const pb = pbs[id];
-          const title = pb.variant ? `${esc(pb.name)} <span style="color:var(--text-dim);">· ${esc(pb.variant)}</span>` : esc(pb.name);
-          return `<tr><td>${title}<br><span style="color:var(--text-dim); font-size:11px;">${pb.sub ? pb.sub + ' · ' : ''}${fmtDate(pb.date)}</span></td><td>${pb.display}</td></tr>`;
+        ${rows.map(r => {
+          const t = r.s.trendPct;
+          const trendTxt = t > 0 ? `+${t}%` : (t < 0 ? `${t}%` : '±0%');
+          const trendColor = t > 0 ? 'var(--success)' : (t < 0 ? 'var(--danger)' : 'var(--text-dim)');
+          return `<tr><td>${r.muscle}<br><span style="color:var(--text-dim); font-size:11px;">seit ${fmtDate(r.s.first.date)} · ${r.s.sessions} Einheiten</span></td><td>${Math.round(r.s.latest.e1rm)} kg<br><span style="font-size:11px; color:${trendColor};">${trendTxt}</span></td></tr>`;
         }).join('')}
       </table>`}
     </div>
@@ -1155,6 +1196,9 @@ function attachHandlers(){
   document.querySelectorAll('[data-action="start-cardio"]').forEach(b => {
     b.onclick = startCardio;
   });
+  document.querySelectorAll('[data-action="start-mobility"]').forEach(b => {
+    b.onclick = (e) => { e.preventDefault(); startMobility(); };
+  });
 
   const cancelLink = document.querySelector('[data-action="cancel-active"]');
   if(cancelLink) cancelLink.onclick = (e) => {e.preventDefault(); cancelActive();};
@@ -1204,6 +1248,12 @@ function attachHandlers(){
   const finishCardioBtn = document.querySelector('[data-action="finish-cardio"]');
   if(finishCardioBtn) finishCardioBtn.onclick = finishCardio;
 
+  document.querySelectorAll('[data-mobility-field]').forEach(inp => {
+    inp.oninput = () => { ACTIVE[inp.dataset.mobilityField] = inp.value; };
+  });
+  const finishMobilityBtn = document.querySelector('[data-action="finish-mobility"]');
+  if(finishMobilityBtn) finishMobilityBtn.onclick = finishMobility;
+
   const restartBtn = document.querySelector('[data-action="restart-cycle"]');
   if(restartBtn) restartBtn.onclick = () => {
     if(confirm('Heute wird Tag 1 eines neuen Zyklus. Deine Historie bleibt erhalten. Fortfahren?')){
@@ -1233,7 +1283,7 @@ function attachHandlers(){
       try{
         const parsed = JSON.parse(reader.result);
         if(!Array.isArray(parsed.sessions) || !Array.isArray(parsed.cardioSessions)){ toast('Ungültige Backup-Datei'); return; }
-        DATA = Object.assign({ sessions:[], cardioSessions:[], cycleStart:null, variants:{} }, parsed);
+        DATA = Object.assign({ sessions:[], cardioSessions:[], mobilitySessions:[], cycleStart:null, variants:{} }, parsed);
         saveData();
         toast('Backup importiert');
         render();
