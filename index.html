@@ -138,6 +138,14 @@
   .histitem .hd .date{color:var(--text-dim); font-weight:400; font-family:var(--mono); font-size:12px;}
   .histitem .detail{font-size:12px; color:var(--text-dim); margin-top:4px; line-height:1.6;}
   .pbtable{width:100%; border-collapse:collapse; font-size:13px;}
+  .chartlegend{display:flex; flex-wrap:wrap; gap:9px 14px; margin-top:10px; justify-content:center;}
+  .legenditem{display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--text-dim);}
+  .legenddot{width:8px; height:8px; border-radius:50%; display:inline-block; flex-shrink:0;}
+  .histex{margin-top:10px;}
+  .histex:first-of-type{margin-top:10px;}
+  .histexname{font-size:12.5px; font-weight:600; color:var(--text); margin-bottom:3px;}
+  .histsets{margin:0 0 0 18px; padding:0; font-size:12px; color:var(--text-dim); line-height:1.55;}
+  .histsets li{list-style:disc;}
   .pbtable td{padding:8px 4px; border-bottom:1px solid var(--line);}
   .pbtable td:last-child{text-align:right; font-family:var(--mono); color:var(--accent); white-space:nowrap;}
   select, input[type=text], input[type=number]{
@@ -446,10 +454,9 @@ function effWeight(variantText, weight){
   return isPerSide(variantText) ? weight * 2 : weight;
 }
 
-/* Fortschritt pro Muskelgruppe statt pro Übung/Gerät: für jede Muskelgruppe wird
-   pro Session der beste e1RM (über alle Übungen, die diese Gruppe treffen) ermittelt.
-   „latest" = aktuelle Referenzlast, „first" = erster gemessener Wert -> Trend in %. */
-function muscleGroupStats(){
+/* Volle Zeitreihe (ein Datenpunkt pro Session, in der die Muskelgruppe getroffen
+   wurde) — Basis für den Kraftverlauf-Chart UND für muscleGroupStats() (Trend). */
+function muscleGroupSeries(){
   const byMuscle = {}; MUSCLES.forEach(m => { byMuscle[m] = []; });
   DATA.sessions.forEach(s => {
     const sessionMax = {};
@@ -466,15 +473,114 @@ function muscleGroupStats(){
     });
     Object.keys(sessionMax).forEach(m => { if(byMuscle[m]) byMuscle[m].push({date: s.date, e1rm: sessionMax[m]}); });
   });
+  MUSCLES.forEach(m => byMuscle[m].sort((a, b) => a.date.localeCompare(b.date)));
+  return byMuscle;
+}
+/* Fortschritt pro Muskelgruppe statt pro Übung/Gerät: „latest" = aktuelle
+   Referenzlast, „first" = erster gemessener Wert -> Trend in %. */
+function muscleGroupStats(){
+  const series = muscleGroupSeries();
   const stats = {};
   MUSCLES.forEach(m => {
-    const list = byMuscle[m].slice().sort((a, b) => a.date.localeCompare(b.date));
+    const list = series[m];
     if(list.length === 0){ stats[m] = null; return; }
     const first = list[0], latest = list[list.length - 1];
     const trendPct = first.e1rm > 0 ? Math.round(((latest.e1rm - first.e1rm) / first.e1rm) * 100) : 0;
     stats[m] = { first, latest, trendPct, sessions: list.length };
   });
   return stats;
+}
+/* Bewegte Tonnage pro Muskelgruppe, chronologisch je Krafteinheit — Basis für den Tonnage-Chart. */
+function tonnageHistory(limit){
+  const list = DATA.sessions
+    .map(s => ({ date: s.date, kgByMuscle: workoutStats(s.exercises).kgByMuscle }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return limit ? list.slice(-limit) : list;
+}
+/* Feste, unterscheidbare Farben je Muskelgruppe — gemeinsam für Tonnage- und Kraftverlauf-Chart. */
+const MUSCLE_COLORS = {
+  'Beine':'#E8A33D', 'Brust':'#5FA8D8', 'Rücken':'#8B7FD9', 'Schulter':'#D9738F',
+  'Arme':'#5FBE7A', 'Waden':'#4FBFBF', 'Core':'#C9C15F'
+};
+function fmtDateShort(iso){
+  const d = new Date(iso + "T12:00:00");
+  return d.getDate() + '.' + (d.getMonth() + 1) + '.';
+}
+function renderMuscleLegend(muscles){
+  return `<div class="chartlegend">${muscles.map(m => `<span class="legenditem"><span class="legenddot" style="background:${MUSCLE_COLORS[m]}"></span>${m}</span>`).join('')}</div>`;
+}
+function renderTonnageChart(){
+  const hist = tonnageHistory(8);
+  const musclesPresent = MUSCLES.filter(m => hist.some(h => (h.kgByMuscle[m] || 0) > 0));
+  if(hist.length === 0 || musclesPresent.length === 0) return '<div class="empty">Noch keine Daten.</div>';
+
+  const W = 340, H = 190, padL = 6, padR = 6, padB = 24, padT = 10;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const totals = hist.map(h => musclesPresent.reduce((sum, m) => sum + (h.kgByMuscle[m] || 0), 0));
+  const maxTotal = Math.max(...totals, 1);
+  const barGap = 6;
+  const barW = (plotW - barGap * (hist.length - 1)) / hist.length;
+
+  const bars = hist.map((h, i) => {
+    const x = padL + i * (barW + barGap);
+    let yCursor = padT + plotH;
+    const segs = musclesPresent.map(m => {
+      const v = h.kgByMuscle[m] || 0;
+      if(v <= 0) return '';
+      const segH = (v / maxTotal) * plotH;
+      yCursor -= segH;
+      return `<rect x="${x.toFixed(1)}" y="${yCursor.toFixed(1)}" width="${barW.toFixed(1)}" height="${segH.toFixed(1)}" fill="${MUSCLE_COLORS[m]}" rx="1.5"></rect>`;
+    }).join('');
+    const label = fmtDateShort(h.date);
+    return segs + `<text x="${(x + barW / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="9" fill="var(--text-dim)">${label}</text>`;
+  }).join('');
+
+  return `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%; height:auto; display:block;">${bars}</svg>
+    ${renderMuscleLegend(musclesPresent)}
+  `;
+}
+function renderStrengthChart(){
+  const series = muscleGroupSeries();
+  const musclesPresent = MUSCLES.filter(m => series[m].length > 0);
+  if(musclesPresent.length === 0) return '<div class="empty">Noch keine Daten.</div>';
+
+  let minDate = null, maxVal = 0;
+  const maxDate = todayISO();
+  musclesPresent.forEach(m => series[m].forEach(p => {
+    if(!minDate || p.date < minDate) minDate = p.date;
+    if(p.e1rm > maxVal) maxVal = p.e1rm;
+  }));
+  const totalDays = Math.max(1, dayDiff(minDate, maxDate));
+
+  const W = 340, H = 190, padL = 30, padR = 10, padB = 20, padT = 12;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const yMax = maxVal * 1.12;
+
+  function xPos(date){ return padL + (dayDiff(minDate, date) / totalDays) * plotW; }
+  function yPos(v){ return padT + plotH - (v / yMax) * plotH; }
+
+  const gridLines = [0.5, 1].map(f => {
+    const y = padT + plotH * (1 - f);
+    const val = Math.round(yMax * f);
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1"></line>
+      <text x="${(padL - 5).toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-dim)">${val}</text>`;
+  }).join('');
+
+  const lines = musclesPresent.map(m => {
+    const pts = series[m];
+    const color = MUSCLE_COLORS[m];
+    const dots = pts.map(p => `<circle cx="${xPos(p.date).toFixed(1)}" cy="${yPos(p.e1rm).toFixed(1)}" r="2.5" fill="${color}"></circle>`).join('');
+    const line = pts.length > 1
+      ? `<polyline points="${pts.map(p => `${xPos(p.date).toFixed(1)},${yPos(p.e1rm).toFixed(1)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>`
+      : '';
+    return line + dots;
+  }).join('');
+
+  return `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%; height:auto; display:block;">${gridLines}${lines}</svg>
+    ${renderMuscleLegend(musclesPresent)}
+  `;
 }
 
 /* Konservative Startgewicht-Schätzung für eine Übung ohne eigene Historie:
@@ -1104,18 +1210,22 @@ function renderHistory(){
       if(it.kind === 'strength'){
         return `<div class="histitem">
           <div class="hd"><span>${it.name}</span><span class="date">${fmtDate(it.date)}</span></div>
-          <div class="detail">${it.exercises.map(ex => {
+          ${it.exercises.map(ex => {
             const done = ex.sets.filter(s => s.done);
             if(done.length === 0) return '';
             const isWeight = ex.type ? ex.type === 'weight' : true;
             const perSide = isPerSide(ex.variant);
             const unitLbl = perSide ? 'kg/H' : 'kg';
-            const setsStr = isWeight
-              ? done.map(s => `${s.weight}${unitLbl}×${s.reps}`).join(', ')
-              : done.map(s => `${s.reps} ${ex.unit}`).join(', ');
             const varTxt = ex.variant ? ` — ${esc(ex.variant)}` : '';
-            return `${ex.name}${varTxt}: ${setsStr}`;
-          }).filter(Boolean).join('<br>')}</div>
+            const items = done.map((s, i) => isWeight
+              ? `<li>Satz ${i + 1}: ${s.weight} ${unitLbl} × ${s.reps}</li>`
+              : `<li>Satz ${i + 1}: ${s.reps} ${ex.unit}</li>`
+            ).join('');
+            return `<div class="histex">
+              <div class="histexname">${ex.name}${varTxt}</div>
+              <ul class="histsets">${items}</ul>
+            </div>`;
+          }).filter(Boolean).join('')}
         </div>`;
       } else if(it.kind === 'cardio'){
         return `<div class="histitem">
@@ -1136,6 +1246,16 @@ function renderProgress(){
   const mstats = muscleGroupStats();
   const rows = MUSCLES.map(m => ({muscle: m, s: mstats[m]})).filter(r => r.s);
   return `
+    <div class="card">
+      <h2 class="cardlabel">Tonnage pro Einheit</h2>
+      <div class="sub">Bewegtes Gewicht (kg × Wdh.) je Muskelgruppe · letzte ${Math.min(8, DATA.sessions.length)} Krafteinheiten</div>
+      ${renderTonnageChart()}
+    </div>
+    <div class="card">
+      <h2 class="cardlabel">Kraftverlauf</h2>
+      <div class="sub">Geschätztes 1RM (e1RM) je Muskelgruppe über die Zeit</div>
+      ${renderStrengthChart()}
+    </div>
     <div class="card">
       <h2 class="cardlabel">Fortschritt pro Muskelgruppe</h2>
       <div class="sub">Referenzlast = bestes e1RM der letzten Einheit, die diese Muskelgruppe getroffen hat — über alle Übungen und Geräte hinweg gemittelt</div>
