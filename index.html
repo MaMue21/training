@@ -510,29 +510,33 @@ function renderMuscleLegend(muscles){
   return `<div class="chartlegend">${muscles.map(m => `<span class="legenditem"><span class="legenddot" style="background:${MUSCLE_COLORS[m]}"></span>${m}</span>`).join('')}</div>`;
 }
 function renderTonnageChart(){
-  const hist = tonnageHistory(8);
+  const hist = tonnageHistory(6); // weniger Einheiten, da gruppierte Balken mehr Breite je Zeitpunkt brauchen
   const musclesPresent = MUSCLES.filter(m => hist.some(h => (h.kgByMuscle[m] || 0) > 0));
   if(hist.length === 0 || musclesPresent.length === 0) return '<div class="empty">Noch keine Daten.</div>';
 
   const W = 340, H = 190, padL = 6, padR = 6, padB = 24, padT = 10;
   const plotW = W - padL - padR, plotH = H - padT - padB;
-  const totals = hist.map(h => musclesPresent.reduce((sum, m) => sum + (h.kgByMuscle[m] || 0), 0));
-  const maxTotal = Math.max(...totals, 1);
-  const barGap = 6;
-  const barW = (plotW - barGap * (hist.length - 1)) / hist.length;
+  // y-Skala: höchster EINZELNER Muskel-Wert (nicht die Summe, da nicht mehr gestapelt wird)
+  let maxVal = 0;
+  hist.forEach(h => musclesPresent.forEach(m => { maxVal = Math.max(maxVal, h.kgByMuscle[m] || 0); }));
+  if(maxVal <= 0) maxVal = 1;
 
-  const bars = hist.map((h, i) => {
-    const x = padL + i * (barW + barGap);
-    let yCursor = padT + plotH;
-    const segs = musclesPresent.map(m => {
+  const clusterGap = 10, barGap = 2;
+  const clusterW = (plotW - clusterGap * (hist.length - 1)) / hist.length;
+  const barW = (clusterW - barGap * (musclesPresent.length - 1)) / musclesPresent.length;
+
+  const bars = hist.map((h, ci) => {
+    const clusterX = padL + ci * (clusterW + clusterGap);
+    const segs = musclesPresent.map((m, mi) => {
       const v = h.kgByMuscle[m] || 0;
       if(v <= 0) return '';
-      const segH = (v / maxTotal) * plotH;
-      yCursor -= segH;
-      return `<rect x="${x.toFixed(1)}" y="${yCursor.toFixed(1)}" width="${barW.toFixed(1)}" height="${segH.toFixed(1)}" fill="${MUSCLE_COLORS[m]}" rx="1.5"></rect>`;
+      const barH = (v / maxVal) * plotH;
+      const x = clusterX + mi * (barW + barGap);
+      const y = padT + plotH - barH;
+      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(barW, 1).toFixed(1)}" height="${barH.toFixed(1)}" fill="${MUSCLE_COLORS[m]}" rx="1"></rect>`;
     }).join('');
     const label = fmtDateShort(h.date);
-    return segs + `<text x="${(x + barW / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="9" fill="var(--text-dim)">${label}</text>`;
+    return segs + `<text x="${(clusterX + clusterW / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="9" fill="var(--text-dim)">${label}</text>`;
   }).join('');
 
   return `
@@ -1248,7 +1252,7 @@ function renderProgress(){
   return `
     <div class="card">
       <h2 class="cardlabel">Tonnage pro Einheit</h2>
-      <div class="sub">Bewegtes Gewicht (kg × Wdh.) je Muskelgruppe · letzte ${Math.min(8, DATA.sessions.length)} Krafteinheiten</div>
+      <div class="sub">Bewegtes Gewicht (kg × Wdh.) je Muskelgruppe · letzte ${Math.min(6, DATA.sessions.length)} Krafteinheiten</div>
       ${renderTonnageChart()}
     </div>
     <div class="card">
