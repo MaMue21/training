@@ -28,7 +28,7 @@ const PROGRAMS = {
     ]},
     B: { name:'Ganzkörper B', exercises: [
       {id:'deadlift_var', name:'Kreuzhebevariation',            muscle:'Rücken',   tier:'core',      sets:3, repMin:5,  repMax:8,  unit:'kg', inc:5,   type:'weight',
-        examples:['Konventionelles Kreuzheben','Rumänisches Kreuzheben','Stiff Leg Deadlift']},
+        examples:['Konventionelles Kreuzheben','Rumänisches Kreuzheben','Rumänisches Kreuzheben KH','Stiff Leg Deadlift']},
       {id:'vpress',       name:'Vertikale Druckbewegung',       muscle:'Schulter', tier:'core',      sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight',
         examples:['Schulterdrücken KH','Schulterdrücken LH','Schulterdrücken Maschine']},
       {id:'legpress',     name:'Beinpresse Variation',          muscle:'Beine',    tier:'core',      sets:2, repMin:6,  repMax:10, unit:'kg', inc:5,   type:'weight',
@@ -119,10 +119,13 @@ const LENGTHS = {
 const LENGTH_ORDER = ['voll','kurz'];
 /* 7-Tage-Zyklus laut Vorlage: Tag 1 = A, Tag 4 = B, Tag 6 = C, Rest = Restdays */
 const SCHEDULE = {1:'A', 2:null, 3:null, 4:'B', 5:null, 6:'C', 7:null};
+/* Mobility-Tage liegen bewusst NICHT in SCHEDULE: dort stehen ausschließlich
+   Krafteinheiten, die über PROGRAMS[...].workouts[...] aufgelöst werden. */
+const MOBILITY_DAYS = [2, 5];
 const MUSCLES = ['Beine','Brust','Rücken','Schulter','Arme','Waden','Core'];
 
 function loadData(){
-  const def = { sessions: [], cardioSessions: [], mobilitySessions: [], bodyWeights: [], cycleStart: null, variants: {}, currentProgram: 'gym', currentLength: 'voll', lastExport: null };
+  const def = { sessions: [], cardioSessions: [], mobilitySessions: [], bodyWeights: [], cycleStart: null, variants: {}, currentProgram: 'gym', currentLength: 'voll', lastExport: null, lockScreenBeep: false };
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
@@ -262,10 +265,12 @@ function suggestWeight(exDef, variantText){
         return {weight: maxWeight, note:`Ziel: ${maxWeight} ${unitLbl} × ${exDef.repMax}`};
       }
     }
-    // Keine eigene Historie für genau diese Variante -> grobe, konservative
-    // Schätzung aus der Muskelgruppen-Referenzlast (siehe estimateFromMuscleGroup).
-    const est = estimateFromMuscleGroup(exDef);
-    if(est != null) return {weight: est, note:`Schätzung: ${est} kg — vorsichtig testen`};
+    // Keine eigene Historie für genau diese Variante -> gestufte Schätzung,
+    // siehe estimateStartWeight.
+    const est = estimateStartWeight(exDef, variantText);
+    if(est) return { weight: est.weight, note: est.source === 'exercise'
+      ? `Schätzung: ${est.weight} kg — von derselben Übung an anderem Gerät abgeleitet`
+      : `Schätzung: ${est.weight} kg — grober Startwert, vorsichtig testen` };
     return null;
   } else {
     if(same){
@@ -378,29 +383,78 @@ function muscleGroupStats(){
   });
   return stats;
 }
-/* Höchstes je erreichtes e1RM einer Muskelgruppe — Basis für die Live-PB-Erkennung beim Abhaken. */
-function muscleGroupBestEver(muscle){
-  const series = muscleGroupSeries()[muscle];
-  if(!series || series.length === 0) return 0;
-  return Math.max(...series.map(p => p.e1rm));
+/* ============ AUSWERTUNG PRO ÜBUNG UND GERÄT ============
+   Bewusst inklusive Variante: Latziehen an der Maschine und am Kabelzug haben
+   unterschiedliche Hebelverhältnisse und sind nicht dieselbe Kraftkurve. Genau
+   diese Vermischung führte vorher zu zu niedrigen Startwerten (Beinpresse aus der
+   Kniebeuge abgeleitet) und zu Schein-Bestwerten an leichtgängigen Geräten. */
+function variantKey(exId, variantText){
+  return exId + '||' + normVariant(variantText);
 }
-/* Deload-Hinweis: e1RM einer Muskelgruppe in den letzten beiden gemessenen
-   Einheiten in Folge gesunken -> könnte auf Ermüdung/Übertraining hindeuten. */
+/* Eine Zeitreihe je Übung+Variante: pro Session das beste e1RM dieser Kombination. */
+function variantSeries(){
+  const out = {};
+  DATA.sessions.forEach(s => {
+    const perSession = {};
+    s.exercises.forEach(ex => {
+      const isWeight = ex.type ? ex.type === 'weight' : true;
+      if(!isWeight) return;
+      const key = variantKey(ex.id, ex.variant);
+      const perSide = isPerSide(ex.variant);
+      ex.sets.forEach(st => {
+        if(!st.done || st.warmup || st.weight == null || st.reps == null) return;
+        const e1rm = epley1RM(perSide ? st.weight * 2 : st.weight, st.reps);
+        if(!perSession[key] || e1rm > perSession[key].e1rm){
+          perSession[key] = { e1rm, exId: ex.id, name: ex.name, muscle: ex.muscle, label: (ex.variant || ex.name) };
+        }
+      });
+    });
+    Object.keys(perSession).forEach(k => {
+      const p = perSession[k];
+      if(!out[k]) out[k] = { exId: p.exId, name: p.name, muscle: p.muscle, label: p.label, points: [] };
+      out[k].points.push({ date: s.date, e1rm: p.e1rm });
+    });
+  });
+  Object.keys(out).forEach(k => out[k].points.sort((a, b) => a.date.localeCompare(b.date)));
+  return out;
+}
+/* Erste/letzte Messung und Trend je Übung+Variante. */
+function variantStats(){
+  const series = variantSeries();
+  const stats = {};
+  Object.keys(series).forEach(k => {
+    const v = series[k];
+    const first = v.points[0], latest = v.points[v.points.length - 1];
+    const trendPct = first.e1rm > 0 ? Math.round(((latest.e1rm - first.e1rm) / first.e1rm) * 100) : 0;
+    stats[k] = { exId: v.exId, name: v.name, muscle: v.muscle, label: v.label,
+                 first, latest, trendPct, sessions: v.points.length };
+  });
+  return stats;
+}
+/* Höchstes je erreichtes e1RM an genau dieser Übung und diesem Gerät —
+   Basis für die Live-PB-Erkennung beim Abhaken. */
+function variantBestEver(exId, variantText){
+  const v = variantSeries()[variantKey(exId, variantText)];
+  if(!v || v.points.length === 0) return 0;
+  return Math.max(...v.points.map(p => p.e1rm));
+}
+/* Deload-Hinweis: e1RM an einer Übung+Variante-Kombination in den letzten
+   beiden gemessenen Einheiten in Folge gesunken. */
 function deloadWarnings(){
-  const series = muscleGroupSeries();
+  const series = variantSeries();
   const warnings = [];
-  MUSCLES.forEach(m => {
-    const list = series[m];
-    if(list.length < 3) return;
-    const last3 = list.slice(-3);
-    if(last3[0].e1rm > last3[1].e1rm && last3[1].e1rm > last3[2].e1rm) warnings.push(m);
+  Object.keys(series).forEach(k => {
+    const pts = series[k].points;
+    if(pts.length < 3) return;
+    const last3 = pts.slice(-3);
+    if(last3[0].e1rm > last3[1].e1rm && last3[1].e1rm > last3[2].e1rm) warnings.push(series[k].label);
   });
   return warnings;
 }
 /* Bewegte Tonnage pro Muskelgruppe, chronologisch je Krafteinheit — Basis für den Tonnage-Chart. */
 function tonnageHistory(limit){
   const list = DATA.sessions
-    .map(s => ({ date: s.date, kgByMuscle: workoutStats(s.exercises).kgByMuscle }))
+    .map(s => ({ date: s.date, variant: s.variant, kgByMuscle: workoutStats(s.exercises).kgByMuscle }))
     .sort((a, b) => a.date.localeCompare(b.date));
   return limit ? list.slice(-limit) : list;
 }
@@ -421,7 +475,8 @@ function renderTonnageChart(){
   const musclesPresent = MUSCLES.filter(m => hist.some(h => (h.kgByMuscle[m] || 0) > 0));
   if(hist.length === 0 || musclesPresent.length === 0) return '<div class="empty">Noch keine Daten.</div>';
 
-  const W = 340, H = 190, padL = 6, padR = 6, padB = 24, padT = 10;
+  // padT bewusst größer als früher: schafft Platz für die Trainingsbezeichnung über den Balken
+  const W = 340, H = 190, padL = 6, padR = 6, padB = 24, padT = 24;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   // y-Skala: höchster EINZELNER Muskel-Wert (nicht die Summe, da nicht mehr gestapelt wird)
   let maxVal = 0;
@@ -442,8 +497,12 @@ function renderTonnageChart(){
       const y = padT + plotH - barH;
       return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(barW, 1).toFixed(1)}" height="${barH.toFixed(1)}" fill="${MUSCLE_COLORS[m]}" rx="1"></rect>`;
     }).join('');
+    const cx = (clusterX + clusterW / 2).toFixed(1);
     const label = fmtDateShort(h.date);
-    return segs + `<text x="${(clusterX + clusterW / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="9" fill="var(--text-dim)">${label}</text>`;
+    const title = h.variant ? esc(h.variant) : '–';
+    return segs +
+      `<text x="${cx}" y="13" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent)">${title}</text>` +
+      `<text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="9" fill="var(--text-dim)">${label}</text>`;
   }).join('');
 
   return `
@@ -494,22 +553,42 @@ function renderStrengthChart(){
   `;
 }
 
-/* Konservative Startgewicht-Schätzung für eine Übung ohne eigene Historie:
-   nimmt die aktuelle Referenzlast (e1RM) der Muskelgruppe, rechnet sie über die
-   Epley-Umkehrung auf die Zielwiederholungszahl der neuen Übung um und schlägt
-   davon nur die Hälfte vor — verschiedene Übungen/Geräte haben oft sehr
-   unterschiedliche Hebelverhältnisse, ein niedriger Einstieg ist der sichere Weg. */
+/* Startwert für eine Übung ohne eigene Historie in genau dieser Variante.
+   Stufe 1 — dieselbe Übung an einem anderen Gerät: die Bewegung stimmt, nur der
+     Hebel unterscheidet sich, deshalb nur ein kleiner Sicherheitsabzug.
+   Stufe 2 — erst wenn es die Übung noch nie gab, dient die Muskelgruppe als grobe
+     Notlösung. Genau dieser Weg war früher der einzige und lieferte z. B. für die
+     Beinpresse viel zu niedrige Werte, weil dort die Kniebeuge einfloss. */
+const SAME_EXERCISE_FACTOR = 0.9;
+/* Deutlich vorsichtiger, weil hier nur die Muskelgruppe passt und die Hebel-
+   verhältnisse völlig andere sein können — ein zu niedriger Einstieg ist der
+   sichere Weg. */
 const MUSCLE_ESTIMATE_FACTOR = 0.5;
-function estimateFromMuscleGroup(exDef){
+function estimateStartWeight(exDef, variantText){
+  const targetReps = exDef.repMax || 8;
+  const inc = exDef.inc > 0 ? exDef.inc : 2.5;
+  const toWeight = (e1rm, factor) => {
+    let est = Math.round(((e1rm / (1 + targetReps / 30)) * factor) / inc) * inc;
+    if(est < inc) est = inc;
+    return Math.round(est * 100) / 100;
+  };
+
+  // Stufe 1: gleiche Übungs-ID, andere Variante
+  const stats = variantStats();
+  const ownKey = variantKey(exDef.id, variantText);
+  let bestSame = 0;
+  Object.keys(stats).forEach(k => {
+    if(k === ownKey) return;
+    if(stats[k].exId !== exDef.id) return;
+    if(stats[k].latest.e1rm > bestSame) bestSame = stats[k].latest.e1rm;
+  });
+  if(bestSame > 0) return { weight: toWeight(bestSame, SAME_EXERCISE_FACTOR), source: 'exercise' };
+
+  // Stufe 2: Muskelgruppe als Notlösung
   if(!exDef.muscle) return null;
   const ms = muscleGroupStats()[exDef.muscle];
   if(!ms) return null;
-  const targetReps = exDef.repMax || 8;
-  const rawWeight = ms.latest.e1rm / (1 + targetReps / 30);
-  const inc = exDef.inc > 0 ? exDef.inc : 2.5;
-  let est = Math.round((rawWeight * MUSCLE_ESTIMATE_FACTOR) / inc) * inc;
-  if(est < inc) est = inc;
-  return Math.round(est * 100) / 100;
+  return { weight: toWeight(ms.latest.e1rm, MUSCLE_ESTIMATE_FACTOR), source: 'muscle' };
 }
 function toast(msg){
   const t = document.getElementById('toast');
@@ -691,6 +770,9 @@ let LAST_SUMMARY = null;
 function finishWorkout(){
   const hasAnySet = ACTIVE.exercises.some(ex => ex.sets.some(s => s.done));
   if(!hasAnySet){ toast('Trag mindestens einen Satz ein, bevor du abschließt.'); return; }
+  /* Rückfrage bewusst NACH der Leer-Prüfung: wer nichts eingetragen hat, soll den
+     Hinweis sehen statt einer Ja/Nein-Frage. */
+  if(!confirm('Training wirklich beenden?')) return;
   ACTIVE.exercises.forEach(ex => { if(ex.variant) DATA.variants[ex.id] = ex.variant; });
   DATA.sessions.push({ date: ACTIVE.date, program: ACTIVE.program, variant: ACTIVE.variant, length: ACTIVE.length, name: ACTIVE.name, exercises: ACTIVE.exercises });
   if(!DATA.cycleStart) DATA.cycleStart = ACTIVE.date;
@@ -721,9 +803,14 @@ function cancelActive(){
 /* ============ REST TIMER ============
    Der Timer wird über einen absoluten Endzeitpunkt (Date.now()+dauer) gesteuert,
    damit er auch dann korrekt weiterläuft, wenn iOS die Seite pausiert.
-   Für den Alarm generieren wir eine WAV-Datei mit Stille + Beep am Ende und lassen
-   sie als HTML-Audio-Element abspielen — HTMLAudio spielt auf iOS auch bei
-   gesperrtem Screen weiter, solange der Silent-Mode-Schalter aus ist. */
+   Für den Alarm gibt es zwei Wege, umschaltbar über DATA.lockScreenBeep:
+     aus (Standard) — kurzer Ton über einen wiederverwendeten AudioContext, sobald
+       die Pause endet. Laufende Musik (z. B. Spotify) wird nicht unterbrochen,
+       dafür gibt es bei gesperrtem Bildschirm nur die Mitteilung.
+     an — eine WAV-Datei aus Stille + Beep am Ende läuft über die volle Pausendauer.
+       HTMLAudio spielt auf iOS auch bei gesperrtem Screen weiter (solange der
+       Silent-Mode-Schalter aus ist), belegt dafür aber die Audio-Ausgabe und
+       pausiert laufende Musik. Beides gleichzeitig geht auf iOS nicht. */
 
 function makeTimerWav(seconds){
   const sampleRate = 16000;                     // reicht für 880-Hz-Beep, hält Datei klein
@@ -759,11 +846,22 @@ function makeTimerWav(seconds){
 function startTimer(seconds){
   stopTimer();
   ensureNotificationPermission();
-  const url = makeTimerWav(seconds);
-  const audio = new Audio(url);
-  audio.preload = 'auto';
-  const playPromise = audio.play();
-  if(playPromise && playPromise.catch) playPromise.catch(() => {});
+  /* Dieser Aufruf steht bewusst hier: startTimer läuft aus einem Tippen heraus,
+     nur dann darf iOS später überhaupt einen Ton abspielen. */
+  ensureBeepContext();
+
+  /* Die WAV aus Stille + Beep am Ende ist der einzige Weg, auf iOS bei GESPERRTEM
+     Bildschirm einen Ton zu bekommen. Sie belegt aber die Audio-Ausgabe über die
+     ganze Pause und pausiert damit laufende Musik. Deshalb nur auf Wunsch. */
+  let audio = null, url = null;
+  if(DATA.lockScreenBeep){
+    url = makeTimerWav(seconds);
+    audio = new Audio(url);
+    audio.preload = 'auto';
+    const playPromise = audio.play();
+    if(playPromise && playPromise.catch) playPromise.catch(() => {});
+  }
+
   TIMER = {
     endTime: Date.now() + seconds * 1000,
     total: seconds,
@@ -777,6 +875,8 @@ function startTimer(seconds){
     if(remaining <= 0){
       if(!TIMER.beeped){
         TIMER.beeped = true;
+        // Im Musik-Modus gibt es keine WAV, die piepst -> kurzer Ton hier.
+        if(!DATA.lockScreenBeep) shortBeep();
         toast('Pause vorbei!');
         fireTimerNotification();
       }
@@ -795,17 +895,33 @@ function stopTimer(){
   TIMER = { endTime:0, total:0, handle:null, audio:null, url:null, beeped:false };
 }
 
-/* Fallback-Beep für den Fall, dass die WAV-Wiedergabe blockiert wurde
-   (z. B. Silent Mode aktiv). Wird beim Zurückkehren aus dem Hintergrund ausgelöst. */
-function fallbackBeep(){
+/* Ein einziger, wiederverwendeter AudioContext.
+   Wichtig: iOS erlaubt Tonausgabe nur, wenn der Context innerhalb einer Nutzer-Geste
+   entstanden ist. Deshalb wird er beim Antippen des Pause-Knopfes angelegt und danach
+   nur noch aufgeweckt — ein erst am Pausenende erzeugter Context bliebe stumm. */
+let BEEP_CTX = null;
+function ensureBeepContext(){
   try{
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if(!BEEP_CTX) BEEP_CTX = new (window.AudioContext || window.webkitAudioContext)();
+    if(BEEP_CTX.state === 'suspended' && BEEP_CTX.resume) BEEP_CTX.resume();
+  }catch(e){ BEEP_CTX = null; }
+  return BEEP_CTX;
+}
+/* Kurzer Piepser über den bestehenden Context. Der Context wird bewusst NICHT
+   geschlossen — sonst müsste der nächste Ton wieder aus einer Geste heraus starten. */
+function shortBeep(){
+  const ctx = ensureBeepContext();
+  if(!ctx) return;
+  try{
     const o = ctx.createOscillator(); const g = ctx.createGain();
     o.connect(g); g.connect(ctx.destination);
     o.frequency.value = 880; g.gain.value = 0.15;
-    o.start(); setTimeout(() => { o.stop(); ctx.close(); }, 350);
+    o.start();
+    setTimeout(() => { try{ o.stop(); }catch(e){} }, 350);
   }catch(e){}
 }
+/* Alter Name, weiterhin von der visibilitychange-Behandlung benutzt. */
+function fallbackBeep(){ shortBeep(); }
 
 function renderTimerOnly(){
   const el = document.getElementById('timerText');
@@ -913,7 +1029,7 @@ function renderOnboarding(){
     </div>
     <div class="card">
       <h2 class="cardlabel">Der Split · ${PROGRAMS[p].name}</h2>
-      ${[1,2,3,4,5,6,7].map(d => `<div class="splitrow"><span class="d">Tag ${d}</span><span>${SCHEDULE[d] ? PROGRAMS[p].workouts[SCHEDULE[d]].name : 'Restday'}</span></div>`).join('')}
+      ${[1,2,3,4,5,6,7].map(d => `<div class="splitrow"><span class="d">Tag ${d}</span><span>${SCHEDULE[d] ? PROGRAMS[p].workouts[SCHEDULE[d]].name : (MOBILITY_DAYS.includes(d) ? 'Mobility' : 'Restday')}</span></div>`).join('')}
     </div>
   `;
 }
@@ -952,6 +1068,17 @@ function renderHome(){
     sub = `Tag ${info.day} von 7`;
     buttons = (nextDue ? renderLengthChoice(nextDue) + startBtn(nextDue, true, `${progWorkout(p, nextDue).name} vorziehen · ${LENGTHS[len].label}`) + '<div style="height:8px"></div>' : '') +
       `<button class="btn secondary" data-action="start-cardio">Ausdauer loggen</button>`;
+  } else if(MOBILITY_DAYS.includes(info.day)){
+    const mobilityDoneToday = cyc.m.some(x => x.date === todayISO());
+    title = mobilityDoneToday ? 'Mobility erledigt ✓' : 'Mobility-Tag';
+    sub = `Tag ${info.day} von 7 · ${mobilityDoneToday ? 'locker gehalten' : 'heute steht Mobility auf dem Plan'}`;
+    buttons = (mobilityDoneToday
+        ? `<button class="btn secondary" data-action="start-mobility">Weitere Mobility loggen</button>`
+        : `<button class="btn" data-action="start-mobility">Mobility loggen</button>`) +
+      `<div style="height:8px"></div><button class="btn secondary" data-action="start-cardio">Ausdauer loggen</button>`;
+    if(nextDue){
+      buttons += `<div style="height:8px"></div>${renderLengthChoice(nextDue)}${startBtn(nextDue, false, `Krafttraining vorziehen (${nextDue}) · ${LENGTHS[len].label}`)}`;
+    }
   } else {
     title = 'Restday';
     sub = `Tag ${info.day} von 7 · Regeneration${!cardioDone ? ' — guter Tag für deine Ausdauereinheit' : ''}`;
@@ -987,7 +1114,9 @@ function renderHome(){
 function renderDeloadNote(){
   const warn = deloadWarnings();
   if(warn.length === 0) return '';
-  return `<div class="deloadnote">${warn.join(', ')}: e1RM zuletzt zwei Einheiten in Folge rückläufig — evtl. eine leichtere Woche einplanen.</div>`;
+  /* esc(): Die Bezeichnungen stammen jetzt aus dem freien Varianten-Textfeld
+     und dürfen nicht ungeprüft ins HTML. */
+  return `<div class="deloadnote">${warn.map(esc).join(', ')}: e1RM zuletzt zwei Einheiten in Folge rückläufig — evtl. eine leichtere Woche einplanen.</div>`;
 }
 
 /* ============ BACKUP-ERINNERUNG ============
@@ -1029,13 +1158,15 @@ function renderCycleStrip(info){
   for(let i = 0; i < 7; i++){
     const date = addDays(info.curStart, i);
     const planned = SCHEDULE[i+1];
+    const isMobDay = MOBILITY_DAYS.includes(i+1);
     const strengthHere = cyc.s.some(x => x.date === date);
     const cardioHere = cyc.c.some(x => x.date === date);
-    const done = strengthHere || (planned === null && cardioHere);
+    const mobilityHere = cyc.m.some(x => x.date === date);
+    const done = strengthHere || (planned === null && cardioHere) || (isMobDay && mobilityHere);
     const today = date === todayISO();
     const future = date > todayISO();
     cells.push(`<div class="slot ${done ? 'done' : ''} ${today ? 'today' : ''} ${(future && !done) ? 'future' : ''}">
-      <div class="big">${planned || '–'}</div>
+      <div class="big">${planned || (isMobDay ? 'M' : '–')}</div>
       <div class="small">${weekdayShort(date)}</div>
     </div>`);
   }
@@ -1149,7 +1280,7 @@ function renderWorkoutView(){
         <div class="exname">${ex.name}</div>
         <input class="variantinput" type="text" placeholder="Deine Variante (z. B. Langhantel, Maschine …)" value="${esc(ex.variant || '')}" data-variant-exi="${exi}">
         ${ex.examples && ex.examples.length ? `<div class="examples">${ex.examples.map(x => `<button class="ex-chip" data-action="pick-example" data-exi="${exi}" data-value="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
-        <div class="exmeta">${ex.muscle} · Ziel ${ex.repMin}–${ex.repMax} ${ex.type === 'time' ? ex.unit : 'Wdh.'}${isPerSide(ex.variant) ? ' · je Hantel' : ''}</div>
+        <div class="exmeta">${ex.muscle} · Ziel ${ex.repMin}–${ex.repMax} ${ex.type === 'time' ? ex.unit : 'Wdh.'}${ex.type === 'weight' ? (isPerSide(ex.variant) ? ' · je Hantel' : ' · Gesamtlast') : ''}</div>
         <div class="lastnote">${ex.suggestNote}</div>
         ${ex.type === 'weight' ? `
           ${warmups.length ? `<div class="warmupblock">${warmups.map((w, wi) => `
@@ -1477,8 +1608,9 @@ function renderHeatmap(){
   `;
 }
 function renderProgress(){
-  const mstats = muscleGroupStats();
-  const rows = MUSCLES.map(m => ({muscle: m, s: mstats[m]})).filter(r => r.s);
+  const vstats = variantStats();
+  const rows = Object.keys(vstats).map(k => vstats[k])
+    .sort((a, b) => (MUSCLES.indexOf(a.muscle) - MUSCLES.indexOf(b.muscle)) || a.label.localeCompare(b.label));
   return `
     <div class="card">
       <h2 class="cardlabel">Aktivität</h2>
@@ -1501,15 +1633,15 @@ function renderProgress(){
       ${renderStrengthChart()}
     </div>
     <div class="card">
-      <h2 class="cardlabel">Fortschritt pro Muskelgruppe</h2>
-      <div class="sub">Referenzlast = bestes e1RM der letzten Einheit, die diese Muskelgruppe getroffen hat — über alle Übungen und Geräte hinweg gemittelt</div>
+      <h2 class="cardlabel">Fortschritt pro Übung</h2>
+      <div class="sub">Bestes e1RM der letzten Einheit — getrennt nach Übung und Gerät, damit Maschine, Kabelzug und Freihantel nicht vermischt werden</div>
       ${rows.length === 0 ? '<div class="empty">Noch keine Daten.</div>' : `
       <table class="pbtable">
         ${rows.map(r => {
-          const t = r.s.trendPct;
+          const t = r.trendPct;
           const trendTxt = t > 0 ? `+${t}%` : (t < 0 ? `${t}%` : '±0%');
           const trendColor = t > 0 ? 'var(--success)' : (t < 0 ? 'var(--danger)' : 'var(--text-dim)');
-          return `<tr><td>${r.muscle}<br><span style="color:var(--text-dim); font-size:11px;">seit ${fmtDate(r.s.first.date)} · ${r.s.sessions} Einheiten</span></td><td>${Math.round(r.s.latest.e1rm)} kg<br><span style="font-size:11px; color:${trendColor};">${trendTxt}</span></td></tr>`;
+          return `<tr><td>${esc(r.label)}<br><span style="color:var(--text-dim); font-size:11px;">${r.muscle} · ${r.sessions} Einheit${r.sessions > 1 ? 'en' : ''} seit ${fmtDate(r.first.date)}</span></td><td>${Math.round(r.latest.e1rm)} kg<br><span style="font-size:11px; color:${trendColor};">${trendTxt}</span></td></tr>`;
         }).join('')}
       </table>`}
     </div>
@@ -1529,10 +1661,33 @@ function renderDataView(){
     <div class="card">
       <h2>Körpergewicht</h2>
       <div class="sub">${latestBw ? `Letzter Eintrag: ${latestBw.weight} kg am ${fmtDate(latestBw.date)}` : 'Optional — ermöglicht eine relative Kraftanzeige (z. B. Kniebeuge im Verhältnis zum Körpergewicht) im Fortschritts-Tab.'}</div>
-      <div class="bwrow">
-        <input type="number" inputmode="decimal" step="0.1" id="bwInput" placeholder="kg">
-        <button class="btn secondary" data-action="log-bodyweight">Speichern</button>
+      <div class="fieldgrid">
+        <div>
+          <label class="field" for="bwInput">Heutiges Gewicht (kg)</label>
+          <input type="number" inputmode="decimal" step="0.1" id="bwInput" placeholder="z. B. 78,5">
+        </div>
       </div>
+      <button class="btn secondary" data-action="log-bodyweight">Speichern</button>
+    </div>
+    <div class="card">
+      <h2>Wochenvolumen-Ziel</h2>
+      <div class="sub">Arbeitssätze pro Muskelgruppe und Woche. Üblicher Korridor: 10–20.</div>
+      <div class="fieldgrid">
+        <div>
+          <label class="field" for="volMin">Minimum</label>
+          <input type="number" inputmode="numeric" id="volMin" value="${volumeTarget().min}">
+        </div>
+        <div>
+          <label class="field" for="volMax">Maximum</label>
+          <input type="number" inputmode="numeric" id="volMax" value="${volumeTarget().max}">
+        </div>
+      </div>
+      <button class="btn secondary" data-action="save-volume-target">Speichern</button>
+    </div>
+    <div class="card">
+      <h2>Pausen-Ton</h2>
+      <div class="sub">Ein Ton bei gesperrtem Bildschirm ist auf dem iPhone nur möglich, wenn die App die Audio-Ausgabe während der ganzen Pause belegt — laufende Musik wird dadurch pausiert. Beides gleichzeitig geht nicht.</div>
+      <button class="chip readinesschip ${DATA.lockScreenBeep ? 'active' : ''}" data-action="toggle-lockscreen-beep">${DATA.lockScreenBeep ? 'Ton bei gesperrtem Bildschirm · Musik pausiert' : 'Musik läuft weiter · Ton nur bei offener App'}</button>
     </div>
     <div class="card">
       <h2>Zyklus</h2>
@@ -1540,27 +1695,22 @@ function renderDataView(){
       ${info ? `<button class="btn secondary" data-action="restart-cycle">Zyklus neu starten (heute = Tag 1)</button>` : ''}
     </div>
     <div class="card">
-      <h2>Wochenvolumen-Ziel</h2>
-      <div class="sub">Arbeitssätze pro Muskelgruppe und Woche. Üblicher Korridor: 10–20.</div>
-      <div class="bwrow">
-        <input type="number" inputmode="numeric" id="volMin" placeholder="min" value="${volumeTarget().min}">
-        <input type="number" inputmode="numeric" id="volMax" placeholder="max" value="${volumeTarget().max}">
-        <button class="btn secondary" data-action="save-volume-target">Speichern</button>
-      </div>
-    </div>
-    <div class="card">
       <h2>Deine Daten</h2>
       <div class="sub">Alles wird ausschließlich lokal in diesem Browser gespeichert (localStorage). Es gibt keine Server-Verbindung — niemand außer dir hat Zugriff.</div>
-      <div class="sub" style="margin-top:6px;">Offline-Version: <span id="cacheVer">wird geprüft …</span></div>
-      <div class="sub">Letztes Backup: ${DATA.lastExport ? fmtDate(DATA.lastExport) : 'noch nie'}</div>
-      <button class="btn secondary" data-action="export">Backup exportieren (.json)</button>
-      <div style="height:8px"></div>
-      <label class="btn secondary" style="display:block; text-align:center; cursor:pointer;">
-        Backup importieren
-        <input type="file" id="importFile" accept="application/json" style="display:none;">
-      </label>
-      <div style="height:8px"></div>
-      <button class="btn danger" data-action="reset-all">Alle Daten löschen</button>
+      <div class="metalist">
+        <div class="metaitem"><span>Offline-Version</span><span class="metaval" id="cacheVer">wird geprüft …</span></div>
+        <div class="metaitem"><span>Letztes Backup</span><span class="metaval">${DATA.lastExport ? fmtDate(DATA.lastExport) : 'noch nie'}</span></div>
+      </div>
+      <div class="btnstack">
+        <button class="btn secondary" data-action="export">Backup exportieren (.json)</button>
+        <label class="btn secondary">
+          Backup importieren
+          <input type="file" id="importFile" accept="application/json" style="display:none;">
+        </label>
+      </div>
+      <div class="dangerzone">
+        <button class="btn danger" data-action="reset-all">Alle Daten löschen</button>
+      </div>
     </div>
   `;
 }
@@ -1611,8 +1761,8 @@ function attachHandlers(){
       if(!wasDone && set.done && !set.warmup && ex.type === 'weight' && set.weight != null && set.reps != null){
         const w = isPerSide(ex.variant) ? set.weight * 2 : set.weight;
         const e1rm = epley1RM(w, set.reps);
-        const prevBest = muscleGroupBestEver(ex.muscle);
-        if(prevBest > 0 && e1rm > prevBest) toast(`Neuer Bestwert ${ex.muscle}: ${Math.round(e1rm)} kg e1RM`);
+        const prevBest = variantBestEver(ex.id, ex.variant);
+        if(prevBest > 0 && e1rm > prevBest) toast(`Neuer Bestwert ${ex.variant || ex.name}: ${Math.round(e1rm)} kg e1RM`);
       }
       render();
     };
@@ -1691,6 +1841,14 @@ function attachHandlers(){
   });
   const finishMobilityBtn = document.querySelector('[data-action="finish-mobility"]');
   if(finishMobilityBtn) finishMobilityBtn.onclick = finishMobility;
+
+  const beepBtn = document.querySelector('[data-action="toggle-lockscreen-beep"]');
+  if(beepBtn) beepBtn.onclick = () => {
+    DATA.lockScreenBeep = !DATA.lockScreenBeep;
+    saveData();
+    render();
+    toast(DATA.lockScreenBeep ? 'Ton auch bei gesperrtem Bildschirm' : 'Musik läuft künftig weiter');
+  };
 
   const volBtn = document.querySelector('[data-action="save-volume-target"]');
   if(volBtn) volBtn.onclick = () => {
