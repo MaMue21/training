@@ -24,15 +24,15 @@ const PROGRAMS = {
       {id:'legcurl',      name:'Beinbeuger Isolation',          muscle:'Beine',    tier:'isolation', sets:2, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
         examples:['Beinbeuger sitzend','Beinbeuger liegend']},
       {id:'biceps',       name:'Bizeps Isolation',              muscle:'Arme',     tier:'isolation', sets:2, repMin:6,  repMax:10, unit:'kg', inc:1,   type:'weight',
-        examples:['Preacher Curls Maschine','Preacher Curls KH','Kurzhantelcurls stehend','Kurzhantelcurls sitzend','Curls am Kabelzug']}
+        examples:['Preacher Curls Maschine','Preacher Curls KH','Kurzhantelcurls stehend','Kurzhantelcurls sitzend','Curls am Kabelzug']},
+      {id:'carry',        name:'Farmers Carry',                 muscle:'Core',     tier:'isolation', sets:3, repMin:20, repMax:45, unit:'kg', inc:2.5, type:'weight', repUnit:'Sek.',
+        examples:['Farmers Carry KH','Farmers Walk Trap Bar','Koffergriff einarmig','Farmers Carry Griffe']}
     ]},
     B: { name:'Ganzkörper B', exercises: [
       {id:'deadlift_var', name:'Kreuzhebevariation',            muscle:'Rücken',   tier:'core',      sets:3, repMin:5,  repMax:8,  unit:'kg', inc:5,   type:'weight',
         examples:['Konventionelles Kreuzheben','Rumänisches Kreuzheben','Rumänisches Kreuzheben KH','Stiff Leg Deadlift']},
       {id:'vpress',       name:'Vertikale Druckbewegung',       muscle:'Schulter', tier:'core',      sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight',
         examples:['Schulterdrücken KH','Schulterdrücken LH','Schulterdrücken Maschine']},
-      {id:'legpress',     name:'Beinpresse Variation',          muscle:'Beine',    tier:'core',      sets:2, repMin:6,  repMax:10, unit:'kg', inc:5,   type:'weight',
-        examples:['Liegende Beinpresse','Sitzende Beinpresse','45°-Beinpresse','Einbeinige Beinpresse']},
       {id:'hpull_close',  name:'Horizontale Zugbewegung eng',   muscle:'Rücken',   tier:'accessory', sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
         examples:['Rudern eng Kabelzug','Rudern eng KH','Rudern eng LH','Rudermaschine eng brustgestützt']},
       {id:'triceps',      name:'Trizeps Isolation',             muscle:'Arme',     tier:'accessory', sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
@@ -40,13 +40,17 @@ const PROGRAMS = {
       {id:'fly',          name:'Flyvariante',                   muscle:'Brust',    tier:'isolation', sets:2, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight',
         examples:['Fly am Kabelzug','Butterflymaschine','Fly mit Kurzhanteln']},
       {id:'reardelt',     name:'Hintere Schulter Isolation',    muscle:'Schulter', tier:'isolation', sets:2, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight',
-        examples:['Rear Delt Row','Reverse Butterfly am Kabelzug','Reverse Butterfly Maschine']}
+        examples:['Rear Delt Row','Reverse Butterfly am Kabelzug','Reverse Butterfly Maschine']},
+      {id:'core_iso',     name:'Core-Stabilisation',            muscle:'Core',     tier:'accessory', sets:3, repMin:30, repMax:60, unit:'Sek.', inc:0, type:'bodyweight', repUnit:'Sek.',
+        examples:['Plank','Side Plank','RKC Plank','Hollow Hold','Copenhagen Plank']}
     ]},
     C: { name:'Ganzkörper C', exercises: [
       {id:'incline',      name:'Schrägbankvariante',            muscle:'Brust',    tier:'core',      sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight',
         examples:['Schrägbankdrücken LH','Schrägbankdrücken KH','Schrägbankdrücken Maschine']},
       {id:'vpull_close',  name:'Vertikale Zugbewegung eng',     muscle:'Rücken',   tier:'core',      sets:3, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight',
         examples:['Chin Ups','Latziehen eng','Latzugmaschine eng','High Row mit engem Griff']},
+      {id:'legpress',     name:'Beinpresse Variation',          muscle:'Beine',    tier:'core',      sets:2, repMin:6,  repMax:10, unit:'kg', inc:5,   type:'weight',
+        examples:['Liegende Beinpresse','Sitzende Beinpresse','45°-Beinpresse','Einbeinige Beinpresse']},
       {id:'legext',       name:'Beinstrecker',                  muscle:'Beine',    tier:'core',      sets:2, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
         examples:['Beinstrecker Maschine']},
       {id:'lateral',      name:'Seithebevariation',             muscle:'Schulter', tier:'accessory', sets:3, repMin:10, repMax:12, unit:'kg', inc:1,   type:'weight',
@@ -125,7 +129,7 @@ const MOBILITY_DAYS = [2, 5];
 const MUSCLES = ['Beine','Brust','Rücken','Schulter','Arme','Waden','Core'];
 
 function loadData(){
-  const def = { sessions: [], cardioSessions: [], mobilitySessions: [], bodyWeights: [], cycleStart: null, variants: {}, currentProgram: 'gym', currentLength: 'voll', lastExport: null, lockScreenBeep: false };
+  const def = { sessions: [], cardioSessions: [], mobilitySessions: [], bodyWeights: [], cycleStart: null, variants: {}, currentProgram: 'gym', currentLength: 'voll', lastExport: null, lockScreenBeep: false, setAdjust: {} };
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
@@ -189,25 +193,47 @@ function streakCycles(){
   let streak = 0;
   for(let k = info.cycleIdx; k >= 0; k--){
     const start = addDays(DATA.cycleStart, k * 7);
-    const {s, c} = sessionsInCycle(start);
-    const full = s.length >= 3 && c.length >= 1;
+    const {s, c, m} = sessionsInCycle(start);
+    const full = s.length >= 3 && c.length >= 1 && m.length >= 1;
     if(full){ streak++; }
     else if(k === info.cycleIdx){ /* laufender Zyklus zählt noch nicht als Bruch */ }
     else break;
   }
   return streak;
 }
+/* ============ SELBST FREIGEGEBENE ZUSATZSÄTZE ============
+   Der Schlüssel enthält bewusst auch die Einheit (A/B/C): 'Seithebevariation' und
+   'Bizeps Isolation' tragen dieselbe Kennung in A UND C — ohne die Einheit im
+   Schlüssel würde aus einem freigegebenen Satz stillschweigend zwei. */
+function setAdjustKey(program, workoutVariant, exId){
+  return `${program}:${workoutVariant}:${exId}`;
+}
+function plannedSetsFor(program, workoutVariant, exDef){
+  const extra = (DATA.setAdjust || {})[setAdjustKey(program, workoutVariant, exDef.id)] || 0;
+  return Math.max(1, exDef.sets + extra);
+}
+/* Klartext-Bezeichnung für einen gespeicherten Schlüssel. */
+function setAdjustLabel(key){
+  const parts = String(key).split(':');
+  const program = parts[0], v = parts[1], id = parts[2];
+  const wk = PROGRAMS[program] && PROGRAMS[program].workouts[v];
+  const ex = wk && wk.exercises.find(e => e.id === id);
+  return `${ex ? ex.name : id} (${v})`;
+}
+
 function planTargets(program){
   const t = {}; MUSCLES.forEach(m => t[m] = 0);
   const wk = PROGRAMS[program].workouts;
-  VARIANT_ORDER.forEach(v => wk[v].exercises.forEach(ex => { t[ex.muscle] += ex.sets; }));
+  VARIANT_ORDER.forEach(v => wk[v].exercises.forEach(ex => { t[ex.muscle] += plannedSetsFor(program, v, ex); }));
   return t;
 }
 function cycleVolume(info){
   const cyc = sessionsInCycle(info.curStart);
   const vol = {}; MUSCLES.forEach(m => vol[m] = 0);
   cyc.s.forEach(s => s.exercises.forEach(ex => {
-    const done = ex.sets.filter(st => st.done).length;
+    /* Ohne Aufwärmsätze: das Soll daneben stammt aus den geplanten ARBEITSsätzen
+       (planTargets), sonst wären Ist und Soll nicht vergleichbar. */
+    const done = ex.sets.filter(st => st.done && !st.warmup).length;
     if(vol[ex.muscle] != null) vol[ex.muscle] += done;
   }));
   return vol;
@@ -234,36 +260,32 @@ function suggestWeight(exDef, variantText){
       if(doneSets.length){
         const allTop = doneSets.length >= exDef.sets && doneSets.every(s => s.reps >= exDef.repMax);
         const maxWeight = Math.max(...doneSets.map(s => s.weight));
-        const unitLbl = isPerSide(variantText) ? 'kg/H' : 'kg';
+        const unitLbl = isBodyweightMovement(variantText) ? 'kg Zusatz' : (isPerSide(variantText) ? 'kg/H' : 'kg');
 
-        /* Autoregulation: RIR = Reps in Reserve, also wie viele Wiederholungen am
-           Satzende noch drin gewesen wären. Die Regel greift bewusst NUR, wenn jeder
-           Arbeitssatz einen Wert hat — aus halb ausgefüllten Angaben ein Gewicht
-           abzuleiten wäre irreführender als die reine Wiederholungsregel.
-           Altdaten ohne RIR fallen deshalb automatisch auf die Logik darunter zurück. */
-        const rirComplete = doneSets.every(s => s.rir != null);
-        if(rirComplete){
-          const minRir = Math.min(...doneSets.map(s => s.rir));
-          // Auf allen Sätzen mindestens 3 Wdh. Reserve -> zu leicht, steigern.
-          // Zusätzlich müssen alle geplanten Sätze stehen: ein einzelner leichter
-          // Satz von dreien rechtfertigt noch kein höheres Gewicht.
-          if(minRir >= 3 && exDef.inc > 0 && doneSets.length >= exDef.sets){
-            const nextW = Math.round((maxWeight + exDef.inc) * 100) / 100;
-            return {weight: nextW, note:`Steigern: ${nextW} ${unitLbl} — RIR ≥3, war zu leicht`};
-          }
-          // Irgendwo nur noch 0–1 Wdh. Reserve -> am Anschlag, Gewicht halten.
-          if(minRir <= 1){
-            return {weight: maxWeight, note:`Halten: ${maxWeight} ${unitLbl} — RIR ≤1, erst sauber wiederholen`};
-          }
-          // RIR 2 -> im Zielbereich, es entscheidet die Wiederholungsregel unten.
-        }
+        /* Doppelte Progression: Gesteigert wird ausschließlich, wenn ALLE geplanten
+           Arbeitssätze die obere Wiederholungsgrenze erreicht haben (allTop).
+           RIR wirkt bewusst nur als BREMSE — eine gute RIR-Angabe allein rechtfertigt
+           kein höheres Gewicht, eine schlechte kann eine fällige Steigerung aber
+           verhindern. Nur auswertbar, wenn jeder Arbeitssatz einen Wert trägt;
+           Altdaten ohne RIR verhalten sich wie vorher. */
+        const rirComplete = doneSets.length > 0 && doneSets.every(s => s.rir != null);
+        const minRir = rirComplete ? Math.min(...doneSets.map(s => s.rir)) : null;
 
         if(allTop && exDef.inc > 0){
+          if(minRir != null && minRir <= 1){
+            return {weight: maxWeight, note:`Halten: ${maxWeight} ${unitLbl} — Wdh. erreicht, aber RIR ≤1`};
+          }
           const nextW = Math.round((maxWeight + exDef.inc) * 100) / 100;
           return {weight: nextW, note:`Steigern: ${nextW} ${unitLbl}`};
         }
-        return {weight: maxWeight, note:`Ziel: ${maxWeight} ${unitLbl} × ${exDef.repMax}`};
+        return {weight: maxWeight, note:`Ziel: ${maxWeight} ${unitLbl} × ${exDef.repMax} ${exDef.repUnit || 'Wdh.'}`};
       }
+    }
+    /* Klimmzug & Co. ohne Historie: Startpunkt ist schlicht das eigene Körpergewicht,
+       also 0 kg Zusatz. Eine aus der Muskelgruppe abgeleitete kg-Zahl wäre hier
+       sinnlos — sie würde als Zusatzgewicht gelesen. */
+    if(isBodyweightMovement(variantText)){
+      return { weight: 0, note: 'Start: nur Körpergewicht — Zusatz später eintragen' };
     }
     // Keine eigene Historie für genau diese Variante -> gestufte Schätzung,
     // siehe estimateStartWeight.
@@ -296,9 +318,38 @@ function isPerSide(variantText){
   if(/1-arm|einarmig|single-arm|einbeinig/.test(t)) return false;
   return /(^|[\s\-\/(])(kh|kurzhantel[a-zäöüß]*|dumbbell[a-z]*)([\s\-\/)]|$)/i.test(t);
 }
-/* Umrechnung: gespeichertes „pro Hantel"-Gewicht → effektive Gesamt-Last für e1RM/Progression-Check */
-function effWeight(variantText, weight){
+/* Klimmzüge, Chin-ups und Dips bewegen den eigenen Körper. Eingetragen wird deshalb
+   nur das ZUSÄTZLICHE Gewicht (negativ = Unterstützung durch Band oder Maschine).
+   Geführte Geräte sind ausgenommen: bei Latziehen/Latzug/Maschine ist die Zahl das
+   Steckgewicht und hat mit dem Körpergewicht nichts zu tun. */
+function isBodyweightMovement(variantText){
+  if(!variantText) return false;
+  const t = String(variantText).toLowerCase();
+  if(/latzieh|latzug|maschine/.test(t)) return false;
+  return /klimmz|pull[-\s]?ups?|chin[-\s]?ups?|muscle[-\s]?ups?|\bdips?\b/.test(t);
+}
+/* Körpergewicht zum Zeitpunkt einer Einheit: der letzte Eintrag an oder vor diesem
+   Datum, ersatzweise der früheste überhaupt. Ohne jeden Eintrag null. */
+function bodyWeightAt(dateISO){
+  const bw = DATA.bodyWeights;
+  if(!bw || bw.length === 0) return null;
+  const sorted = bw.slice().sort((a, b) => a.date.localeCompare(b.date));
+  let val = null;
+  for(const e of sorted){
+    if(e.date <= dateISO) val = e.weight; else break;
+  }
+  return val != null ? val : sorted[0].weight;
+}
+/* Gesamtlast eines Satzes in kg — die EINE Stelle für alle Sonderfälle:
+     Kurzhantel  -> eingetragen ist pro Hantel, also verdoppeln
+     Klimmzug    -> eingetragen ist der Zusatz, also Körpergewicht addieren
+   Gibt null zurück, wenn sich keine sinnvolle Last bestimmen lässt. */
+function setLoad(variantText, weight, dateISO){
   if(weight == null) return null;
+  if(isBodyweightMovement(variantText)){
+    const bw = bodyWeightAt(dateISO);
+    return bw == null ? null : bw + weight;
+  }
   return isPerSide(variantText) ? weight * 2 : weight;
 }
 
@@ -355,11 +406,11 @@ function muscleGroupSeries(){
     const sessionMax = {};
     s.exercises.forEach(ex => {
       const isWeight = ex.type ? ex.type === 'weight' : true;
-      if(!isWeight) return;
-      const perSide = isPerSide(ex.variant);
+      if(!isWeight || ex.repUnit) return;   // repUnit -> Sekunden, kein sinnvolles e1RM
       ex.sets.forEach(st => {
         if(!st.done || st.warmup || st.weight == null || st.reps == null) return;
-        const w = perSide ? st.weight * 2 : st.weight;
+        const w = setLoad(ex.variant, st.weight, s.date);
+        if(w == null) return;
         const e1rm = epley1RM(w, st.reps);
         if(!sessionMax[ex.muscle] || e1rm > sessionMax[ex.muscle]) sessionMax[ex.muscle] = e1rm;
       });
@@ -398,12 +449,13 @@ function variantSeries(){
     const perSession = {};
     s.exercises.forEach(ex => {
       const isWeight = ex.type ? ex.type === 'weight' : true;
-      if(!isWeight) return;
+      if(!isWeight || ex.repUnit) return;   // repUnit -> Sekunden, kein sinnvolles e1RM
       const key = variantKey(ex.id, ex.variant);
-      const perSide = isPerSide(ex.variant);
       ex.sets.forEach(st => {
         if(!st.done || st.warmup || st.weight == null || st.reps == null) return;
-        const e1rm = epley1RM(perSide ? st.weight * 2 : st.weight, st.reps);
+        const load = setLoad(ex.variant, st.weight, s.date);
+        if(load == null) return;
+        const e1rm = epley1RM(load, st.reps);
         if(!perSession[key] || e1rm > perSession[key].e1rm){
           perSession[key] = { e1rm, exId: ex.id, name: ex.name, muscle: ex.muscle, label: (ex.variant || ex.name) };
         }
@@ -454,7 +506,7 @@ function deloadWarnings(){
 /* Bewegte Tonnage pro Muskelgruppe, chronologisch je Krafteinheit — Basis für den Tonnage-Chart. */
 function tonnageHistory(limit){
   const list = DATA.sessions
-    .map(s => ({ date: s.date, variant: s.variant, kgByMuscle: workoutStats(s.exercises).kgByMuscle }))
+    .map(s => ({ date: s.date, variant: s.variant, kgByMuscle: workoutStats(s.exercises, s.date).kgByMuscle }))
     .sort((a, b) => a.date.localeCompare(b.date));
   return limit ? list.slice(-limit) : list;
 }
@@ -596,17 +648,24 @@ function toast(msg){
   setTimeout(() => t.classList.remove('show'), 1800);
 }
 
-function workoutStats(exercises){
+/* dateISO wird für die Körpergewichts-Zuordnung bei Klimmzügen gebraucht. */
+function workoutStats(exercises, dateISO){
   const kgByMuscle = {};
   MUSCLES.forEach(m => { kgByMuscle[m] = 0; });
   let totalKg = 0, totalReps = 0, totalSets = 0;
+  const refDate = dateISO || todayISO();
   exercises.forEach(ex => {
-    const perSide = isPerSide(ex.variant);
+    /* Übungen mit repUnit (z. B. Plank, Farmers Carry) zählen Sekunden statt
+       Wiederholungen. kg × Sekunden ist keine bewegte Last und Sekunden sind keine
+       Wiederholungen — beides bliebe sonst als Fantasiezahl in den Auswertungen.
+       Als SATZ zählen sie weiterhin, dafür macht man sie ja. */
+    const timeBased = !!ex.repUnit;
     ex.sets.forEach(s => {
       if(!s.done) return;
       totalSets++;
-      if(ex.type === 'weight' && s.weight != null && s.reps != null){
-        const w = perSide ? s.weight * 2 : s.weight;
+      if(timeBased) return;
+      const w = ex.type === 'weight' ? setLoad(ex.variant, s.weight, refDate) : null;
+      if(w != null && s.reps != null){
         const kg = w * s.reps;
         if(kgByMuscle[ex.muscle] != null) kgByMuscle[ex.muscle] += kg;
         totalKg += kg;
@@ -698,15 +757,21 @@ function startWorkout(program, variant, length){
     program, variant, length, name: dispName, date: todayISO(), readinessLow: false,
     exercises: filtered.map(ex => {
       const initialVariant = DATA.variants[ex.id] || '';
-      const sugg = suggestWeight(ex, initialVariant);
+      /* Selbst freigegebene Zusatzsätze fließen hier ein — auch in den Vorschlag,
+         damit die Steigerungsregel (alle geplanten Sätze auf Ziel-Wdh.) mit der
+         tatsächlich geplanten Satzzahl rechnet. */
+      const plannedSets = plannedSetsFor(program, variant, ex);
+      const exAdj = Object.assign({}, ex, { sets: plannedSets });
+      const sugg = suggestWeight(exAdj, initialVariant);
       const hasWeightSugg = ex.type === 'weight' && sugg && sugg.weight != null;
       return {
         id: ex.id, name: ex.name, muscle: ex.muscle, unit: ex.unit, type: ex.type,
-        repMin: ex.repMin, repMax: ex.repMax, inc: ex.inc, plannedSets: ex.sets,
+        repUnit: ex.repUnit || null,  // z. B. 'Sek.' bei Plank und Farmers Carry
+        repMin: ex.repMin, repMax: ex.repMax, inc: ex.inc, plannedSets: plannedSets,
         examples: ex.examples || [],
         variant: initialVariant,
         suggestNote: sugg ? sugg.note : (ex.type === 'weight' ? 'Erster Eintrag — trag deine Variante und dein Startgewicht ein.' : 'Erster Eintrag — leg los.'),
-        sets: Array.from({length: ex.sets}, () => ({
+        sets: Array.from({length: plannedSets}, () => ({
           weight: hasWeightSugg ? sugg.weight : null, reps: null, done: false,
           auto: hasWeightSugg,  // von der App vorbefüllt, noch nicht vom Nutzer angefasst
           baseWeight: hasWeightSugg ? sugg.weight : null, // unskalierte Basis für Tagesform-Anpassung
@@ -727,15 +792,21 @@ function startWorkout(program, variant, length){
    eingetragene oder bereits abgehakte Sätze bleiben unangetastet. */
 function recomputeSuggestion(exi){
   const item = ACTIVE.exercises[exi];
-  const fauxDef = { id: item.id, type: item.type, repMin: item.repMin, repMax: item.repMax, inc: item.inc, unit: item.unit, sets: item.plannedSets, muscle: item.muscle };
+  const fauxDef = { id: item.id, type: item.type, repMin: item.repMin, repMax: item.repMax, inc: item.inc, unit: item.unit, repUnit: item.repUnit, sets: item.plannedSets, muscle: item.muscle };
   const sugg = suggestWeight(fauxDef, item.variant);
   item.suggestNote = sugg ? sugg.note : (item.type === 'weight' ? 'Erster Eintrag — trag deine Variante und dein Startgewicht ein.' : 'Erster Eintrag — leg los.');
   if(item.type !== 'weight') return;
   const newWeight = (sugg && sugg.weight != null) ? sugg.weight : null;
   item.sets.forEach(s => {
-    if(s.done || !s.auto) return;
+    if(s.done) return;
+    /* Auch noch komplett leere Sätze übernehmen den Vorschlag. Beim Start der Einheit
+       stand die Variante oft noch nicht fest — dann gab es nichts vorzubefüllen und
+       das auto-Kennzeichen fehlt. Ohne diesen Fall bliebe z. B. bei Klimmzügen das
+       Feld leer, und der Satz zählte mangels Gewicht für keine Auswertung. */
+    if(!s.auto && s.weight != null) return;
     s.weight = newWeight;
     s.baseWeight = newWeight;
+    s.auto = newWeight != null;
   });
   if(ACTIVE.readinessLow) applyReadinessToExercise(item);
 }
@@ -762,7 +833,7 @@ function startCardio(){
 }
 const MOBILITY_FOCUS = ['Ganzkörper','Hüfte','Schulter','Wirbelsäule','Knöchel/Fuß','Sonstiges'];
 function startMobility(){
-  ACTIVE = { mobility:true, date: todayISO(), focus:'Ganzkörper', duration: 10 };
+  ACTIVE = { mobility:true, date: todayISO(), focus:'Ganzkörper', duration: 10, rpe: 5 };
   setView('mobility');
 }
 let LAST_SUMMARY = null;
@@ -778,7 +849,7 @@ function finishWorkout(){
   if(!DATA.cycleStart) DATA.cycleStart = ACTIVE.date;
   saveData();
   stopTimer();
-  LAST_SUMMARY = { name: ACTIVE.name, date: ACTIVE.date, stats: workoutStats(ACTIVE.exercises) };
+  LAST_SUMMARY = { name: ACTIVE.name, date: ACTIVE.date, stats: workoutStats(ACTIVE.exercises, ACTIVE.date) };
   ACTIVE = null;
   setView('summary');
 }
@@ -790,7 +861,7 @@ function finishCardio(){
   toast('Ausdauereinheit gespeichert');
 }
 function finishMobility(){
-  DATA.mobilitySessions.push({ date: ACTIVE.date, focus: ACTIVE.focus, duration: ACTIVE.duration });
+  DATA.mobilitySessions.push({ date: ACTIVE.date, focus: ACTIVE.focus, duration: ACTIVE.duration, rpe: ACTIVE.rpe });
   saveData();
   ACTIVE = null;
   setView('home');
@@ -1221,6 +1292,84 @@ function weeklySetCount(){
   });
   return counts;
 }
+
+/* Minimum-RIR je Einheit für eine Muskelgruppe, chronologisch. Einheiten ohne
+   jede RIR-Angabe bleiben außen vor. */
+function rirHistoryForMuscle(muscle){
+  const out = [];
+  DATA.sessions.forEach(s => {
+    let min = null;
+    s.exercises.forEach(ex => {
+      if(ex.muscle !== muscle) return;
+      ex.sets.forEach(st => {
+        if(!st.done || st.warmup || st.rir == null) return;
+        if(min == null || st.rir < min) min = st.rir;
+      });
+    });
+    if(min != null) out.push(min);
+  });
+  return out;
+}
+/* Deutet die jüngste Historie auf fehlende Erholung? Dann wird KEIN zusätzliches
+   Volumen vorgeschlagen. Zwei unabhängige Signale: sinkende Leistung (bestehende
+   Deload-Erkennung) oder durchgehend ausgereizte Sätze (RIR 0–1). */
+function recoveryStrained(muscle){
+  const series = variantSeries();
+  const warned = deloadWarnings();
+  const labels = Object.keys(series).filter(k => series[k].muscle === muscle).map(k => series[k].label);
+  if(warned.some(w => labels.includes(w))) return true;
+  const rirs = rirHistoryForMuscle(muscle);
+  return rirs.length >= 2 && rirs.slice(-2).every(v => v <= 1);
+}
+/* Bei Gleichstand gewinnt die Isolationsübung: zusätzliches Volumen über Isolation
+   belastet die Erholung am wenigsten. */
+const TIER_RANK = { isolation: 0, accessory: 1, core: 2 };
+/* Vorschlag für zusätzliches Volumen — bewusst auf Basis des PLANS, nicht der
+   zuletzt geloggten Sätze. Eine ausgefallene Einheit ist ein Grund nachzuholen,
+   kein Grund den Plan dauerhaft aufzublähen. */
+function volumeSuggestions(){
+  const program = DATA.currentProgram || 'gym';
+  const t = volumeTarget();
+  const targets = planTargets(program);
+  const out = [];
+  MUSCLES.forEach(m => {
+    const ist = targets[m] || 0;
+    if(ist >= t.min) return;
+    if(recoveryStrained(m)) return;
+    let best = null;
+    VARIANT_ORDER.forEach(v => PROGRAMS[program].workouts[v].exercises.forEach(ex => {
+      if(ex.muscle !== m) return;
+      const sets = plannedSetsFor(program, v, ex);
+      const rank = TIER_RANK[ex.tier] != null ? TIER_RANK[ex.tier] : 3;
+      if(!best || sets < best.sets || (sets === best.sets && rank < best.rank)){
+        best = { sets, rank, name: ex.name, workout: v, key: setAdjustKey(program, v, ex.id) };
+      }
+    }));
+    if(best) out.push({ muscle: m, ist, fehlt: t.min - ist, name: best.name, workout: best.workout, key: best.key });
+  });
+  return out;
+}
+function renderVolumeSuggestions(){
+  const sug = volumeSuggestions();
+  const adj = DATA.setAdjust || {};
+  const adjKeys = Object.keys(adj).filter(k => adj[k] > 0);
+  if(sug.length === 0 && adjKeys.length === 0) return '';
+  const min = volumeTarget().min;
+  /* Bewusst EIN Kasten mit einer Zeile je Muskelgruppe. Ein eigener Hinweiskasten
+     pro Gruppe füllte bei frischem Plan den halben Bildschirm — und wer fünf
+     gleich aussehende Kästen sieht, liest keinen davon. */
+  return `
+    ${sug.length ? `<div class="deloadnote">
+      Laut Plan unter deinem Korridor — ein Satz auf einmal, gilt ab der nächsten Einheit:
+      <div class="volsug">
+        ${sug.map(s => `<button class="chip" data-action="add-set" data-key="${esc(s.key)}">${s.muscle} ${s.ist}/${min} · +1 ${esc(s.name)} (${s.workout})</button>`).join('')}
+      </div>
+    </div>` : ''}
+    ${adjKeys.length ? `<div class="wvol-legend">Von dir ergänzt: ${adjKeys.map(k => esc(setAdjustLabel(k)) + ' +' + adj[k]).join(' · ')}
+      <div style="margin-top:8px;"><button class="chip" data-action="reset-setadjust">Anpassungen zurücksetzen</button></div></div>` : ''}
+  `;
+}
+
 function renderWeeklyVolume(){
   const t = volumeTarget();
   const counts = weeklySetCount();
@@ -1280,14 +1429,14 @@ function renderWorkoutView(){
         <div class="exname">${ex.name}</div>
         <input class="variantinput" type="text" placeholder="Deine Variante (z. B. Langhantel, Maschine …)" value="${esc(ex.variant || '')}" data-variant-exi="${exi}">
         ${ex.examples && ex.examples.length ? `<div class="examples">${ex.examples.map(x => `<button class="ex-chip" data-action="pick-example" data-exi="${exi}" data-value="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
-        <div class="exmeta">${ex.muscle} · Ziel ${ex.repMin}–${ex.repMax} ${ex.type === 'time' ? ex.unit : 'Wdh.'}${ex.type === 'weight' ? (isPerSide(ex.variant) ? ' · je Hantel' : ' · Gesamtlast') : ''}</div>
+        <div class="exmeta">${ex.muscle} · Ziel ${ex.repMin}–${ex.repMax} ${ex.repUnit || (ex.type === 'time' ? ex.unit : 'Wdh.')}${ex.type !== 'weight' ? '' : (isBodyweightMovement(ex.variant) ? (bodyWeightAt(a.date) != null ? ` · Zusatz zu ${bodyWeightAt(a.date)} kg Körpergewicht` : ' · Zusatzgewicht — Körpergewicht im Daten-Tab fehlt') : (isPerSide(ex.variant) ? ' · je Hantel' : ' · Gesamtlast'))}</div>
         <div class="lastnote">${ex.suggestNote}</div>
         ${ex.type === 'weight' ? `
           ${warmups.length ? `<div class="warmupblock">${warmups.map((w, wi) => `
             <div class="setrow warmuprow">
               <div class="setnum warmupnum" data-action="remove-warmup" data-exi="${exi}" data-si="${w.si}">W${wi + 1}</div>
-              <input type="number" inputmode="decimal" placeholder="${isPerSide(ex.variant) ? 'kg/H' : 'kg'}" value="${w.s.weight ?? ''}" data-set-field="weight" data-exi="${exi}" data-si="${w.si}">
-              <input type="number" inputmode="numeric" placeholder="Wdh" value="${w.s.reps ?? ''}" data-set-field="reps" data-exi="${exi}" data-si="${w.si}">
+              <input type="number" inputmode="decimal" placeholder="${isBodyweightMovement(ex.variant) ? '+kg' : (isPerSide(ex.variant) ? 'kg/H' : 'kg')}" value="${w.s.weight ?? ''}" data-set-field="weight" data-exi="${exi}" data-si="${w.si}">
+              <input type="number" inputmode="numeric" placeholder="${ex.repUnit || 'Wdh'}" value="${w.s.reps ?? ''}" data-set-field="reps" data-exi="${exi}" data-si="${w.si}">
               <button class="checkbtn ${w.s.done ? 'checked' : ''}" data-action="toggle-set" data-exi="${exi}" data-si="${w.si}">${w.s.done ? '✓' : ''}</button>
             </div>
           `).join('')}</div>` : ''}
@@ -1296,8 +1445,8 @@ function renderWorkoutView(){
         ${workSets.map((w, wi) => ex.type === 'weight' ? `
           <div class="setrow">
             <div class="setnum">${wi+1}</div>
-            <input type="number" inputmode="decimal" placeholder="${isPerSide(ex.variant) ? 'kg/H' : 'kg'}" value="${w.s.weight ?? ''}" data-set-field="weight" data-exi="${exi}" data-si="${w.si}">
-            <input type="number" inputmode="numeric" placeholder="Wdh" value="${w.s.reps ?? ''}" data-set-field="reps" data-exi="${exi}" data-si="${w.si}">
+            <input type="number" inputmode="decimal" placeholder="${isBodyweightMovement(ex.variant) ? '+kg' : (isPerSide(ex.variant) ? 'kg/H' : 'kg')}" value="${w.s.weight ?? ''}" data-set-field="weight" data-exi="${exi}" data-si="${w.si}">
+            <input type="number" inputmode="numeric" placeholder="${ex.repUnit || 'Wdh'}" value="${w.s.reps ?? ''}" data-set-field="reps" data-exi="${exi}" data-si="${w.si}">
             <button class="checkbtn ${w.s.done ? 'checked' : ''}" data-action="toggle-set" data-exi="${exi}" data-si="${w.si}">${w.s.done ? '✓' : ''}</button>
           </div>
           ${renderRirRow(exi, w)}
@@ -1382,6 +1531,9 @@ function renderMobilityView(){
 
       <label class="field">Dauer (Minuten)</label>
       <input type="number" inputmode="numeric" value="${a.duration}" data-mobility-field="duration">
+
+      <label class="field">Belastung (RPE 1–10)</label>
+      <input type="number" inputmode="numeric" min="1" max="10" value="${a.rpe}" data-mobility-field="rpe">
     </div>
     <button class="btn" data-action="finish-mobility">Einheit speichern</button>
   `;
@@ -1465,7 +1617,7 @@ function renderHistory(){
       } else {
         return `<div class="histitem tappable" ${openAttrs}>
           <div class="hd"><span>Mobility — ${esc(it.focus)}</span><span class="date">${fmtDate(it.date)}</span></div>
-          <div class="detail">${esc(it.duration)} Min</div>
+          <div class="detail">${esc(it.duration)} Min${it.rpe ? ` · RPE ${esc(it.rpe)}` : ''}</div>
         </div>`;
       }
     }).join('')}
@@ -1492,6 +1644,14 @@ function renderEditView(){
           ${ex.sets.map((s, si) => {
             const isWeight = ex.type ? ex.type === 'weight' : true;
             const numLabel = s.warmup ? 'W' : (si + 1);
+            /* RIR nachträglich korrigierbar. Anders als im Training auch bei noch
+               nicht abgehakten Sätzen sichtbar — beim Nachtragen will man drankommen,
+               ohne erst etwas abhaken zu müssen. Aufwärmsätze bleiben außen vor. */
+            const rirRow = (isWeight && !s.warmup && !ex.repUnit) ? `
+              <div class="rirrow">
+                <span class="rirlbl">RIR</span>
+                ${[0,1,2,3,4].map(n => `<button class="rirchip ${s.rir === n ? 'active' : ''}" data-action="edit-set-rir" data-exi="${exi}" data-si="${si}" data-rir="${n}">${n === 4 ? '4+' : n}</button>`).join('')}
+              </div>` : '';
             return isWeight ? `
               <div class="setrow">
                 <div class="setnum">${numLabel}</div>
@@ -1499,6 +1659,7 @@ function renderEditView(){
                 <input type="number" inputmode="numeric" value="${s.reps ?? ''}" data-edit-field="reps" data-exi="${exi}" data-si="${si}">
                 <button class="checkbtn ${s.done ? 'checked' : ''}" data-action="edit-toggle-set" data-exi="${exi}" data-si="${si}">${s.done ? '✓' : ''}</button>
               </div>
+              ${rirRow}
             ` : `
               <div class="setrow single">
                 <div class="setnum">${numLabel}</div>
@@ -1542,6 +1703,8 @@ function renderEditView(){
         </select>
         <label class="field">Dauer (Minuten)</label>
         <input type="number" inputmode="numeric" value="${it.duration}" data-edit-mobility="duration">
+        <label class="field">Belastung (RPE 1–10)</label>
+        <input type="number" inputmode="numeric" min="1" max="10" value="${it.rpe ?? ''}" data-edit-mobility="rpe">
       </div>
       ${footer}
     `;
@@ -1621,6 +1784,7 @@ function renderProgress(){
       <h2 class="cardlabel">Wochenvolumen</h2>
       <div class="sub">Arbeitssätze je Muskelgruppe · letzte 7 Tage · Ziel ${volumeTarget().min}–${volumeTarget().max} Sätze</div>
       ${renderWeeklyVolume()}
+      ${renderVolumeSuggestions()}
     </div>
     <div class="card">
       <h2 class="cardlabel">Tonnage pro Einheit</h2>
@@ -1758,11 +1922,13 @@ function attachHandlers(){
       const set = ex.sets[si];
       const wasDone = set.done;
       set.done = !set.done;
-      if(!wasDone && set.done && !set.warmup && ex.type === 'weight' && set.weight != null && set.reps != null){
-        const w = isPerSide(ex.variant) ? set.weight * 2 : set.weight;
-        const e1rm = epley1RM(w, set.reps);
-        const prevBest = variantBestEver(ex.id, ex.variant);
-        if(prevBest > 0 && e1rm > prevBest) toast(`Neuer Bestwert ${ex.variant || ex.name}: ${Math.round(e1rm)} kg e1RM`);
+      if(!wasDone && set.done && !set.warmup && ex.type === 'weight' && !ex.repUnit && set.weight != null && set.reps != null){
+        const w = setLoad(ex.variant, set.weight, ACTIVE.date);
+        if(w != null){
+          const e1rm = epley1RM(w, set.reps);
+          const prevBest = variantBestEver(ex.id, ex.variant);
+          if(prevBest > 0 && e1rm > prevBest) toast(`Neuer Bestwert ${ex.variant || ex.name}: ${Math.round(e1rm)} kg e1RM`);
+        }
       }
       render();
     };
@@ -1794,7 +1960,12 @@ function attachHandlers(){
       const ex = ACTIVE.exercises[exi];
       const firstWork = ex.sets.find(s => !s.warmup && s.weight != null);
       const suggW = firstWork ? Math.max(0, Math.round((firstWork.weight * 0.5) / 2.5) * 2.5) : null;
-      ex.sets.unshift({ weight: suggW, reps: null, done:false, warmup:true });
+      /* Hinten an den Aufwärmblock anfügen, nicht davor: so folgt die Nummerierung
+         der Reihenfolge des Hinzufügens (W1, W2, …) und bereits angelegte Sätze
+         behalten ihre Nummer. */
+      let insertAt = 0;
+      while(insertAt < ex.sets.length && ex.sets[insertAt].warmup) insertAt++;
+      ex.sets.splice(insertAt, 0, { weight: suggW, reps: null, done:false, warmup:true });
       render();
     };
   });
@@ -1850,6 +2021,25 @@ function attachHandlers(){
     toast(DATA.lockScreenBeep ? 'Ton auch bei gesperrtem Bildschirm' : 'Musik läuft künftig weiter');
   };
 
+  document.querySelectorAll('[data-action="add-set"]').forEach(b => {
+    b.onclick = () => {
+      const key = b.dataset.key;
+      DATA.setAdjust = DATA.setAdjust || {};
+      DATA.setAdjust[key] = (DATA.setAdjust[key] || 0) + 1;
+      saveData();
+      render();
+      toast('Satz ergänzt — gilt ab der nächsten Einheit');
+    };
+  });
+  const resetAdjBtn = document.querySelector('[data-action="reset-setadjust"]');
+  if(resetAdjBtn) resetAdjBtn.onclick = () => {
+    if(!confirm('Alle selbst ergänzten Sätze zurücksetzen?')) return;
+    DATA.setAdjust = {};
+    saveData();
+    render();
+    toast('Anpassungen zurückgesetzt');
+  };
+
   const volBtn = document.querySelector('[data-action="save-volume-target"]');
   if(volBtn) volBtn.onclick = () => {
     const min = parseInt(document.getElementById('volMin').value, 10);
@@ -1886,6 +2076,14 @@ function attachHandlers(){
     inp.oninput = () => {
       const exi = +inp.dataset.exi, si = +inp.dataset.si, field = inp.dataset.editField;
       EDIT_ITEM.exercises[exi].sets[si][field] = inp.value === '' ? null : parseFloat(inp.value);
+    };
+  });
+  document.querySelectorAll('[data-action="edit-set-rir"]').forEach(b => {
+    b.onclick = () => {
+      const exi = +b.dataset.exi, si = +b.dataset.si, val = +b.dataset.rir;
+      const s = EDIT_ITEM.exercises[exi].sets[si];
+      s.rir = (s.rir === val) ? null : val;  // nochmal auf denselben Wert tippen = löschen
+      render();
     };
   });
   document.querySelectorAll('[data-action="edit-toggle-set"]').forEach(b => {
@@ -1939,7 +2137,7 @@ function attachHandlers(){
       try{
         const parsed = JSON.parse(reader.result);
         if(!Array.isArray(parsed.sessions) || !Array.isArray(parsed.cardioSessions)){ toast('Ungültige Backup-Datei'); return; }
-        DATA = Object.assign({ sessions:[], cardioSessions:[], mobilitySessions:[], bodyWeights:[], cycleStart:null, variants:{}, lastExport:null }, parsed);
+        DATA = Object.assign({ sessions:[], cardioSessions:[], mobilitySessions:[], bodyWeights:[], cycleStart:null, variants:{}, lastExport:null, setAdjust:{} }, parsed);
         /* Wer gerade eine Backup-Datei eingelesen hat, besitzt nachweislich eine —
            die Erinnerung startet deshalb neu, statt sofort wieder anzuschlagen. */
         DATA.lastExport = todayISO();
