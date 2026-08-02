@@ -661,7 +661,10 @@ function workoutStats(exercises, dateISO){
        Als SATZ zählen sie weiterhin, dafür macht man sie ja. */
     const timeBased = !!ex.repUnit;
     ex.sets.forEach(s => {
-      if(!s.done) return;
+      /* Aufwärmsätze bleiben draußen — einheitlich mit Volumenzähler, Bestwerten
+         und RIR-Auswertung. Sonst stiege die Tonnage allein dadurch, dass man sich
+         gründlicher aufwärmt, und die Zahlen wären über die Zeit nicht vergleichbar. */
+      if(!s.done || s.warmup) return;
       totalSets++;
       if(timeBased) return;
       const w = ex.type === 'weight' ? setLoad(ex.variant, s.weight, refDate) : null;
@@ -1096,7 +1099,8 @@ function renderOnboarding(){
       <button class="btn" data-action="start-workout" data-variant="A" data-length="${len}">${LENGTHS[len].label} starten (${progExerciseCount(p,'A',len)} Übungen)</button>
       <div style="height:8px"></div>
       <button class="btn secondary" data-action="start-cardio">Ausdauer loggen</button>
-      <div class="mobilitylink"><a href="#" data-action="start-mobility">+ Mobility loggen</a></div>
+      <div style="height:8px"></div>
+      <button class="btn secondary" data-action="start-mobility">Mobility loggen</button>
     </div>
     <div class="card">
       <h2 class="cardlabel">Der Split · ${PROGRAMS[p].name}</h2>
@@ -1161,6 +1165,12 @@ function renderHome(){
     }
   }
 
+  /* Mobility bekommt denselben Knopf wie Ausdauer. An Mobility-Tagen steht er
+     bereits weiter oben in der Kette — dann nicht doppelt anhängen. */
+  if(!MOBILITY_DAYS.includes(info.day)){
+    buttons += `<div style="height:8px"></div><button class="btn secondary" data-action="start-mobility">Mobility loggen</button>`;
+  }
+
   return `
     <div class="card">
       ${renderProgramSwitch()}
@@ -1169,7 +1179,6 @@ function renderHome(){
       ${renderDeloadNote()}
       ${renderBackupNote()}
       ${buttons}
-      <div class="mobilitylink"><a href="#" data-action="start-mobility">+ Mobility loggen</a></div>
     </div>
     <div class="card">
       <h2 class="cardlabel">Dein 7-Tage-Zyklus</h2>
@@ -1586,40 +1595,45 @@ function renderHistory(){
     ...DATA.mobilitySessions.map((m, i) => ({...m, kind:'mobility', idx:i}))
   ].sort((a,b) => b.date.localeCompare(a.date));
   if(items.length === 0) return `<div class="card"><div class="empty">Noch keine Einheiten geloggt.</div></div>`;
+  /* <details> statt eigener Aufklapp-Logik: der Zustand lebt im Browser, nicht in
+     der App — ein erneutes Rendern kann ihn nicht versehentlich zurücksetzen. */
   return `<div class="card">
     ${items.map(it => {
-      const openAttrs = `data-action="open-edit" data-kind="${it.kind}" data-idx="${it.idx}"`;
+      const editBtn = `<div class="histedit"><button class="chip" data-action="open-edit" data-kind="${it.kind}" data-idx="${it.idx}">Bearbeiten</button></div>`;
+      let titel, koerper;
       if(it.kind === 'strength'){
-        return `<div class="histitem tappable" ${openAttrs}>
-          <div class="hd"><span>${it.name}</span><span class="date">${fmtDate(it.date)}</span></div>
-          ${it.exercises.map(ex => {
-            const done = ex.sets.filter(s => s.done);
-            if(done.length === 0) return '';
-            const isWeight = ex.type ? ex.type === 'weight' : true;
-            const perSide = isPerSide(ex.variant);
-            const unitLbl = perSide ? 'kg/H' : 'kg';
-            const varTxt = ex.variant ? ` — ${esc(ex.variant)}` : '';
-            const setItems = done.map((s, i) => isWeight
-              ? `<li>${s.warmup ? 'Aufwärmen' : `Satz ${i + 1}`}: ${s.weight} ${unitLbl} × ${s.reps}</li>`
-              : `<li>Satz ${i + 1}: ${s.reps} ${ex.unit}</li>`
-            ).join('');
-            return `<div class="histex">
-              <div class="histexname">${ex.name}${varTxt}</div>
-              <ul class="histsets">${setItems}</ul>
-            </div>`;
-          }).filter(Boolean).join('')}
-        </div>`;
+        titel = esc(it.name);
+        koerper = it.exercises.map(ex => {
+          const done = ex.sets.filter(s => s.done);
+          if(done.length === 0) return '';
+          const isWeight = ex.type ? ex.type === 'weight' : true;
+          const unitLbl = isPerSide(ex.variant) ? 'kg/H' : 'kg';
+          const varTxt = ex.variant ? ` — ${esc(ex.variant)}` : '';
+          /* Eigener Zähler für Arbeitssätze: der Index würde Aufwärmsätze mitzählen
+             und die Nummerierung damit verschieben (Aufwärmen, Satz 2, Satz 3 …). */
+          let satzNr = 0;
+          const setItems = done.map(s => {
+            const label = s.warmup ? 'Aufwärmen' : `Satz ${++satzNr}`;
+            return isWeight
+              ? `<li>${label}: ${s.weight} ${unitLbl} × ${s.reps}</li>`
+              : `<li>${label}: ${s.reps} ${ex.unit}</li>`;
+          }).join('');
+          return `<div class="histex">
+            <div class="histexname">${ex.name}${varTxt}</div>
+            <ul class="histsets">${setItems}</ul>
+          </div>`;
+        }).filter(Boolean).join('');
       } else if(it.kind === 'cardio'){
-        return `<div class="histitem tappable" ${openAttrs}>
-          <div class="hd"><span>Ausdauer — ${esc(it.type)}</span><span class="date">${fmtDate(it.date)}</span></div>
-          <div class="detail">${esc(it.duration)} Min${it.distance ? ` · ${esc(it.distance)} km` : ''} · RPE ${esc(it.rpe)}</div>
-        </div>`;
+        titel = `Ausdauer — ${esc(it.type)}`;
+        koerper = `<div class="detail">${esc(it.duration)} Min${it.distance ? ` · ${esc(it.distance)} km` : ''} · RPE ${esc(it.rpe)}</div>`;
       } else {
-        return `<div class="histitem tappable" ${openAttrs}>
-          <div class="hd"><span>Mobility — ${esc(it.focus)}</span><span class="date">${fmtDate(it.date)}</span></div>
-          <div class="detail">${esc(it.duration)} Min${it.rpe ? ` · RPE ${esc(it.rpe)}` : ''}</div>
-        </div>`;
+        titel = `Mobility — ${esc(it.focus)}`;
+        koerper = `<div class="detail">${esc(it.duration)} Min${it.rpe ? ` · RPE ${esc(it.rpe)}` : ''}</div>`;
       }
+      return `<details class="histitem">
+        <summary><span class="histname">${titel}</span><span class="date">(${fmtDate(it.date)})</span></summary>
+        <div class="histbody">${koerper}${editBtn}</div>
+      </details>`;
     }).join('')}
   </div>`;
 }
@@ -1788,7 +1802,7 @@ function renderProgress(){
     </div>
     <div class="card">
       <h2 class="cardlabel">Tonnage pro Einheit</h2>
-      <div class="sub">Bewegtes Gewicht (kg × Wdh.) je Muskelgruppe · letzte ${Math.min(6, DATA.sessions.length)} Krafteinheiten</div>
+      <div class="sub">Bewegtes Gewicht (kg × Wdh.) je Muskelgruppe · nur Arbeitssätze · letzte ${Math.min(6, DATA.sessions.length)} Krafteinheiten</div>
       ${renderTonnageChart()}
     </div>
     <div class="card">
