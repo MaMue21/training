@@ -121,15 +121,20 @@ const LENGTHS = {
   kurz: { label:'Kurz', minutes:'~25 min', filter: (ex) => ex.tier !== 'isolation' }
 };
 const LENGTH_ORDER = ['voll','kurz'];
-/* 7-Tage-Zyklus laut Vorlage: Tag 1 = A, Tag 4 = B, Tag 6 = C, Rest = Restdays */
-const SCHEDULE = {1:'A', 2:null, 3:null, 4:'B', 5:null, 6:'C', 7:null};
-/* Mobility-Tage liegen bewusst NICHT in SCHEDULE: dort stehen ausschließlich
-   Krafteinheiten, die über PROGRAMS[...].workouts[...] aufgelöst werden. */
-const MOBILITY_DAYS = [2, 5];
+
+/* ============ DYNAMISCHE RUHEZEIT ============
+   Mindest-Ruhetage nach einer Krafteinheit, abgeleitet aus der Nachwirkung, die
+   am Folgetag erfasst wird. Es sind VOLLE Ruhetage: nach einer Einheit am Montag
+   mit 'mittel' (2 Ruhetage = Di + Mi) ist Donnerstag wieder dran.
+   Diese drei Zeilen sind der einzige Ort, an dem die Schwellen stehen. */
+const REST_DAYS = { niedrig: 1, mittel: 2, hoch: 3 };
+const REST_DEFAULT = 'mittel';                       // vorläufig, bis die Rückmeldung da ist
+const INTENSITY_ORDER = ['niedrig', 'mittel', 'hoch'];
+
 const MUSCLES = ['Beine','Brust','Rücken','Schulter','Arme','Waden','Core'];
 
 function loadData(){
-  const def = { sessions: [], cardioSessions: [], mobilitySessions: [], bodyWeights: [], cycleStart: null, variants: {}, currentProgram: 'gym', currentLength: 'voll', lastExport: null, lockScreenBeep: false, setAdjust: {} };
+  const def = { sessions: [], cardioSessions: [], mobilitySessions: [], bodyWeights: [], variants: {}, currentProgram: 'gym', currentLength: 'voll', lastExport: null, lockScreenBeep: false, setAdjust: {} };
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
@@ -170,37 +175,6 @@ function weekdayShort(iso){
   return ['So','Mo','Di','Mi','Do','Fr','Sa'][new Date(iso + "T12:00:00").getDay()];
 }
 
-/* Zyklus: Tag 1 = Tag des ersten abgeschlossenen Trainings (bzw. nach Neustart). */
-function cycleInfo(){
-  if(!DATA.cycleStart) return null;
-  const d = Math.max(0, dayDiff(DATA.cycleStart, todayISO()));
-  const day = (d % 7) + 1;
-  const cycleIdx = Math.floor(d / 7);
-  const curStart = addDays(DATA.cycleStart, cycleIdx * 7);
-  return { day, cycleIdx, curStart };
-}
-function sessionsInCycle(startISO){
-  const end = addDays(startISO, 7);
-  return {
-    s: DATA.sessions.filter(x => x.date >= startISO && x.date < end),
-    c: DATA.cardioSessions.filter(x => x.date >= startISO && x.date < end),
-    m: DATA.mobilitySessions.filter(x => x.date >= startISO && x.date < end)
-  };
-}
-function streakCycles(){
-  const info = cycleInfo();
-  if(!info) return 0;
-  let streak = 0;
-  for(let k = info.cycleIdx; k >= 0; k--){
-    const start = addDays(DATA.cycleStart, k * 7);
-    const {s, c, m} = sessionsInCycle(start);
-    const full = s.length >= 3 && c.length >= 1 && m.length >= 1;
-    if(full){ streak++; }
-    else if(k === info.cycleIdx){ /* laufender Zyklus zählt noch nicht als Bruch */ }
-    else break;
-  }
-  return streak;
-}
 /* ============ SELBST FREIGEGEBENE ZUSATZSÄTZE ============
    Der Schlüssel enthält bewusst auch die Einheit (A/B/C): 'Seithebevariation' und
    'Bizeps Isolation' tragen dieselbe Kennung in A UND C — ohne die Einheit im
@@ -221,22 +195,101 @@ function setAdjustLabel(key){
   return `${ex ? ex.name : id} (${v})`;
 }
 
+/* Krafteinheiten chronologisch, älteste zuerst. Die Historie kann durch Bearbeiten
+   aus der Reihe geraten, deshalb wird hier immer sortiert. */
+function sessionsByDate(){
+  return DATA.sessions.slice().sort((a, b) => a.date.localeCompare(b.date));
+}
+function lastStrengthSession(){
+  const list = sessionsByDate();
+  return list.length ? list[list.length - 1] : null;
+}
+/* Index der letzten Einheit im Original-Array — für das Speichern der Intensität. */
+function lastStrengthIndex(){
+  const last = lastStrengthSession();
+  if(!last) return -1;
+  return DATA.sessions.indexOf(last);
+}
+/* Nächste Einheit in der Abfolge A -> B -> C -> A. */
+function nextVariant(){
+  const last = lastStrengthSession();
+  if(!last) return VARIANT_ORDER[0];
+  const i = VARIANT_ORDER.indexOf(last.variant);
+  return i === -1 ? VARIANT_ORDER[0] : VARIANT_ORDER[(i + 1) % VARIANT_ORDER.length];
+}
+/* Wann ist die nächste Einheit frühestens dran?
+   provisional = true bedeutet: die Nachwirkung wurde noch nicht erfasst, es gilt
+   vorläufig REST_DEFAULT. */
+function nextSessionInfo(){
+  const last = lastStrengthSession();
+  const variant = nextVariant();
+  if(!last){
+    return { variant, lastDate: null, intensity: null, provisional: false,
+             restDays: 0, readyDate: todayISO(), daysLeft: 0, due: true };
+  }
+  const intensity = REST_DAYS[last.intensity] != null ? last.intensity : null;
+  const restDays = REST_DAYS[intensity || REST_DEFAULT];
+  const readyDate = addDays(last.date, restDays + 1);
+  const daysLeft = Math.max(0, dayDiff(todayISO(), readyDate));
+  return { variant, lastDate: last.date, intensity, provisional: intensity == null,
+           restDays, readyDate, daysLeft, due: daysLeft === 0 };
+}
+/* Steht die Intensitäts-Rückfrage an? Bewusst erst ab dem Folgetag — Muskelkater
+   und Erschöpfung zeigen sich selten am Trainingstag selbst.
+   Rückgabe: Index im DATA.sessions-Array, oder -1. */
+function pendingIntensityIndex(){
+  const idx = lastStrengthIndex();
+  if(idx < 0) return -1;
+  const s = DATA.sessions[idx];
+  if(s.intensity) return -1;
+  if(s.date >= todayISO()) return -1;
+  return idx;
+}
+/* Runden statt Kalenderzyklen: eine Runde ist voll, sobald A, B und C je einmal
+   absolviert wurden. Danach beginnt die nächste. Funktioniert auch, wenn die
+   Reihenfolge einmal abweicht oder eine Einheit doppelt gemacht wird. */
+function rounds(){
+  const out = [];
+  let cur = { sessions: [], seen: {} };
+  sessionsByDate().forEach(s => {
+    cur.sessions.push(s);
+    if(VARIANT_ORDER.indexOf(s.variant) !== -1) cur.seen[s.variant] = true;
+    if(Object.keys(cur.seen).length === VARIANT_ORDER.length){
+      out.push({ sessions: cur.sessions, start: cur.sessions[0].date, end: s.date, complete: true });
+      cur = { sessions: [], seen: {} };
+    }
+  });
+  if(cur.sessions.length){
+    out.push({ sessions: cur.sessions, start: cur.sessions[0].date,
+               end: cur.sessions[cur.sessions.length - 1].date, complete: false });
+  }
+  return out;
+}
+function roundsComplete(){
+  return rounds().filter(r => r.complete).length;
+}
+/* Die laufende, noch nicht abgeschlossene Runde. Nach einer vollen Runde ist sie leer. */
+function currentRoundSessions(){
+  const rs = rounds();
+  if(rs.length === 0) return [];
+  const last = rs[rs.length - 1];
+  return last.complete ? [] : last.sessions;
+}
+/* Arbeitssätze je Muskelgruppe in der laufenden Runde. */
+function roundVolume(){
+  const vol = {}; MUSCLES.forEach(m => vol[m] = 0);
+  currentRoundSessions().forEach(s => s.exercises.forEach(ex => {
+    const done = ex.sets.filter(st => st.done && !st.warmup).length;
+    if(vol[ex.muscle] != null) vol[ex.muscle] += done;
+  }));
+  return vol;
+}
+
 function planTargets(program){
   const t = {}; MUSCLES.forEach(m => t[m] = 0);
   const wk = PROGRAMS[program].workouts;
   VARIANT_ORDER.forEach(v => wk[v].exercises.forEach(ex => { t[ex.muscle] += plannedSetsFor(program, v, ex); }));
   return t;
-}
-function cycleVolume(info){
-  const cyc = sessionsInCycle(info.curStart);
-  const vol = {}; MUSCLES.forEach(m => vol[m] = 0);
-  cyc.s.forEach(s => s.exercises.forEach(ex => {
-    /* Ohne Aufwärmsätze: das Soll daneben stammt aus den geplanten ARBEITSsätzen
-       (planTargets), sonst wären Ist und Soll nicht vergleichbar. */
-    const done = ex.sets.filter(st => st.done && !st.warmup).length;
-    if(vol[ex.muscle] != null) vol[ex.muscle] += done;
-  }));
-  return vol;
 }
 function normVariant(v){
   return (v || '').trim().toLowerCase();
@@ -849,7 +902,6 @@ function finishWorkout(){
   if(!confirm('Training wirklich beenden?')) return;
   ACTIVE.exercises.forEach(ex => { if(ex.variant) DATA.variants[ex.id] = ex.variant; });
   DATA.sessions.push({ date: ACTIVE.date, program: ACTIVE.program, variant: ACTIVE.variant, length: ACTIVE.length, name: ACTIVE.name, exercises: ACTIVE.exercises });
-  if(!DATA.cycleStart) DATA.cycleStart = ACTIVE.date;
   saveData();
   stopTimer();
   LAST_SUMMARY = { name: ACTIVE.name, date: ACTIVE.date, stats: workoutStats(ACTIVE.exercises, ACTIVE.date) };
@@ -1026,7 +1078,7 @@ function render(){
   app.innerHTML = `
     <header class="topbar">
       <h1>Trainingsplan</h1>
-      <div class="streak">${ICON_FLAME}${streakCycles()} Zyklen</div>
+      <div class="streak">${ICON_FLAME}${roundsComplete()} ${roundsComplete() === 1 ? 'Runde' : 'Runden'}</div>
     </header>
     <main>${body}</main>
     ${(ACTIVE || VIEW === 'summary' || VIEW === 'edit') ? '' : renderTabbar()}
@@ -1103,23 +1155,22 @@ function renderOnboarding(){
       <button class="btn secondary" data-action="start-mobility">Mobility loggen</button>
     </div>
     <div class="card">
-      <h2 class="cardlabel">Der Split · ${PROGRAMS[p].name}</h2>
-      ${[1,2,3,4,5,6,7].map(d => `<div class="splitrow"><span class="d">Tag ${d}</span><span>${SCHEDULE[d] ? PROGRAMS[p].workouts[SCHEDULE[d]].name : (MOBILITY_DAYS.includes(d) ? 'Mobility' : 'Restday')}</span></div>`).join('')}
+      <h2 class="cardlabel">Die Abfolge · ${PROGRAMS[p].name}</h2>
+      <div class="sub">A → B → C, dann wieder von vorn. Nach jeder Einheit fragt die App am Folgetag nach der Nachwirkung und leitet daraus 1–3 Ruhetage ab.</div>
+      ${VARIANT_ORDER.map(v => `<div class="splitrow"><span class="d">${v}</span><span>${PROGRAMS[p].workouts[v].name}</span></div>`).join('')}
     </div>
   `;
 }
 
 function renderHome(){
-  const info = cycleInfo();
-  if(!info) return renderOnboarding();
+  if(DATA.sessions.length === 0) return renderOnboarding();
   const p = DATA.currentProgram || 'gym';
   const len = DATA.currentLength || 'voll';
-  const cyc = sessionsInCycle(info.curStart);
-  const doneVariants = new Set(cyc.s.map(x => x.variant));
-  const scheduled = SCHEDULE[info.day];
-  const doneTodayStrength = cyc.s.some(x => x.date === todayISO());
-  const nextDue = VARIANT_ORDER.find(v => !doneVariants.has(v)) || null;
-  const cardioDone = cyc.c.length > 0;
+  const next = nextSessionInfo();
+  const heute = todayISO();
+  const doneTodayStrength = DATA.sessions.some(s => s.date === heute);
+  const mobilityDoneToday = DATA.mobilitySessions.some(s => s.date === heute);
+  const wkName = progWorkout(p, next.variant).name;
 
   function startBtn(variant, primary=true, label=null){
     const wk = progWorkout(p, variant);
@@ -1128,50 +1179,35 @@ function renderHome(){
     return `<button class="btn ${primary ? '' : 'secondary'}" data-action="start-workout" data-variant="${variant}" data-length="${len}">${txt} (${cnt} Üb.)</button>`;
   }
 
-  let title, sub, buttons;
+  let title, sub;
   if(doneTodayStrength){
     title = 'Heute erledigt ✓';
-    sub = `Tag ${info.day} von 7 — gute Arbeit.`;
-    buttons = `<button class="btn secondary" data-action="start-cardio">Ausdauer loggen</button>`;
-  } else if(scheduled && !doneVariants.has(scheduled)){
-    title = progWorkout(p, scheduled).name;
-    sub = `Tag ${info.day} von 7 · heute laut Plan`;
-    buttons = renderLengthChoice(scheduled) + startBtn(scheduled, true) +
-      `<div style="height:8px"></div><button class="btn secondary" data-action="start-cardio">Ausdauer loggen</button>`;
-  } else if(scheduled){
-    title = `${progWorkout(p, scheduled).name} bereits absolviert ✓`;
-    sub = `Tag ${info.day} von 7`;
-    buttons = (nextDue ? renderLengthChoice(nextDue) + startBtn(nextDue, true, `${progWorkout(p, nextDue).name} vorziehen · ${LENGTHS[len].label}`) + '<div style="height:8px"></div>' : '') +
-      `<button class="btn secondary" data-action="start-cardio">Ausdauer loggen</button>`;
-  } else if(MOBILITY_DAYS.includes(info.day)){
-    const mobilityDoneToday = cyc.m.some(x => x.date === todayISO());
-    title = mobilityDoneToday ? 'Mobility erledigt ✓' : 'Mobility-Tag';
-    sub = `Tag ${info.day} von 7 · ${mobilityDoneToday ? 'locker gehalten' : 'heute steht Mobility auf dem Plan'}`;
-    buttons = (mobilityDoneToday
-        ? `<button class="btn secondary" data-action="start-mobility">Weitere Mobility loggen</button>`
-        : `<button class="btn" data-action="start-mobility">Mobility loggen</button>`) +
-      `<div style="height:8px"></div><button class="btn secondary" data-action="start-cardio">Ausdauer loggen</button>`;
-    if(nextDue){
-      buttons += `<div style="height:8px"></div>${renderLengthChoice(nextDue)}${startBtn(nextDue, false, `Krafttraining vorziehen (${nextDue}) · ${LENGTHS[len].label}`)}`;
-    }
+    sub = 'Gute Arbeit. Nach der Nachwirkung fragt die App morgen — daraus ergibt sich die Pause.';
+  } else if(next.due){
+    title = wkName;
+    sub = `Dran seit ${fmtDate(next.readyDate)}${next.provisional ? ' · vorläufig, Nachwirkung noch offen' : ''}`;
   } else {
-    title = 'Restday';
-    sub = `Tag ${info.day} von 7 · Regeneration${!cardioDone ? ' — guter Tag für deine Ausdauereinheit' : ''}`;
-    buttons = !cardioDone
-      ? `<button class="btn" data-action="start-cardio">Ausdauer loggen</button>`
-      : `<button class="btn secondary" data-action="start-cardio">Ausdauer loggen</button>`;
-    if(nextDue){
-      buttons += `<div style="height:8px"></div>${renderLengthChoice(nextDue)}${startBtn(nextDue, false, `Krafttraining vorziehen (${nextDue}) · ${LENGTHS[len].label}`)}`;
-    }
+    title = 'Erholung';
+    sub = `${wkName} frühestens am ${fmtDate(next.readyDate)} · noch ${next.daysLeft} ${next.daysLeft === 1 ? 'Tag' : 'Tage'}${next.provisional ? ' (vorläufig)' : ''}`;
   }
 
-  /* Mobility bekommt denselben Knopf wie Ausdauer. An Mobility-Tagen steht er
-     bereits weiter oben in der Kette — dann nicht doppelt anhängen. */
-  if(!MOBILITY_DAYS.includes(info.day)){
-    buttons += `<div style="height:8px"></div><button class="btn secondary" data-action="start-mobility">Mobility loggen</button>`;
+  /* Der Startknopf ist IMMER da — die Ruhezeit ist eine Empfehlung, keine Sperre.
+     Ist die Einheit noch nicht dran, tritt er nur optisch zurück. */
+  let buttons = '';
+  if(!doneTodayStrength){
+    buttons += renderLengthChoice(next.variant) +
+      startBtn(next.variant, next.due, next.due ? null : `${wkName} trotzdem starten · ${LENGTHS[len].label}`) +
+      `<div style="height:8px"></div>`;
   }
+  /* An Ruhetagen ist Mobility der naheliegende Hauptknopf — das ersetzt die
+     früheren festen Mobility-Tage. */
+  buttons += (!next.due && !doneTodayStrength && !mobilityDoneToday)
+    ? `<button class="btn" data-action="start-mobility">Mobility loggen</button>`
+    : `<button class="btn secondary" data-action="start-mobility">${mobilityDoneToday ? 'Weitere Mobility loggen' : 'Mobility loggen'}</button>`;
+  buttons += `<div style="height:8px"></div><button class="btn secondary" data-action="start-cardio">Ausdauer loggen</button>`;
 
   return `
+    ${renderIntensityAsk()}
     <div class="card">
       ${renderProgramSwitch()}
       <h2>${title}</h2>
@@ -1181,16 +1217,33 @@ function renderHome(){
       ${buttons}
     </div>
     <div class="card">
-      <h2 class="cardlabel">Dein 7-Tage-Zyklus</h2>
-      ${renderCycleStrip(info)}
+      <h2 class="cardlabel">Nächste Einheit</h2>
+      ${renderNextSession()}
     </div>
     <div class="card">
-      <h2 class="cardlabel">Sätze pro Muskelgruppe · dieser Zyklus</h2>
-      <div class="sub">Ist / Voll-Soll (${PROGRAMS[p].name}) über alle drei Einheiten</div>
-      ${renderVolume(info, p)}
+      <h2 class="cardlabel">Sätze pro Muskelgruppe · diese Runde</h2>
+      <div class="sub">Ist / Soll (${PROGRAMS[p].name}) über eine volle Runde A + B + C</div>
+      ${renderVolume(p)}
     </div>
   `;
 }
+/* Fragt die Nachwirkung der letzten Einheit ab — erst ab dem Folgetag.
+   Aus der Antwort ergibt sich, wie lange die Pause bis zur nächsten Einheit dauert. */
+function renderIntensityAsk(){
+  const idx = pendingIntensityIndex();
+  if(idx < 0) return '';
+  const s = DATA.sessions[idx];
+  return `
+    <div class="card">
+      <h2>Wie war die letzte Einheit?</h2>
+      <div class="sub">${esc(s.name)} vom ${fmtDate(s.date)} — Muskelkater und Erschöpfung zeigen sich meist erst am Tag danach. Aus deiner Antwort ergibt sich die Pause bis zur nächsten Einheit.</div>
+      <div class="chiprow">
+        ${INTENSITY_ORDER.map(v => `<button class="chip" data-action="set-intensity" data-idx="${idx}" data-value="${v}">${v} · ${REST_DAYS[v]} ${REST_DAYS[v] === 1 ? 'Ruhetag' : 'Ruhetage'}</button>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function renderDeloadNote(){
   const warn = deloadWarnings();
   if(warn.length === 0) return '';
@@ -1232,32 +1285,33 @@ function renderBackupNote(){
   return `<div class="deloadnote">${txt} Zieh dir im Daten-Tab eine JSON-Datei, damit deine Historie einen Browser-Reset übersteht.</div>`;
 }
 
-function renderCycleStrip(info){
-  const cyc = sessionsInCycle(info.curStart);
-  const cells = [];
-  for(let i = 0; i < 7; i++){
-    const date = addDays(info.curStart, i);
-    const planned = SCHEDULE[i+1];
-    const isMobDay = MOBILITY_DAYS.includes(i+1);
-    const strengthHere = cyc.s.some(x => x.date === date);
-    const cardioHere = cyc.c.some(x => x.date === date);
-    const mobilityHere = cyc.m.some(x => x.date === date);
-    const done = strengthHere || (planned === null && cardioHere) || (isMobDay && mobilityHere);
-    const today = date === todayISO();
-    const future = date > todayISO();
-    cells.push(`<div class="slot ${done ? 'done' : ''} ${today ? 'today' : ''} ${(future && !done) ? 'future' : ''}">
-      <div class="big">${planned || (isMobDay ? 'M' : '–')}</div>
-      <div class="small">${weekdayShort(date)}</div>
-    </div>`);
-  }
-  return `<div class="weekgrid">${cells.join('')}</div>
-    <div class="cardiostatus">Ausdauer diesen Zyklus: ${cyc.c.length > 0 ? '<span class="ok">✓ erledigt</span>' : '– noch offen'}</div>
-    ${cyc.m.length > 0 ? `<div class="cardiostatus">Mobility diesen Zyklus: ${cyc.m.length} Einheit${cyc.m.length > 1 ? 'en' : ''}</div>` : ''}`;
+/* Ersetzt den früheren 7-Tage-Streifen: es gibt kein festes Raster mehr, sondern
+   nur noch „was kommt als Nächstes, ab wann und warum" plus einen kurzen Rückblick. */
+function renderNextSession(){
+  const p = DATA.currentProgram || 'gym';
+  const next = nextSessionInfo();
+  const letzte = sessionsByDate().slice(-3).reverse();
+  const grund = !next.lastDate
+    ? 'Noch keine Einheit absolviert.'
+    : (next.provisional
+        ? `Vorläufig ${next.restDays} Ruhetage — die Nachwirkung der letzten Einheit ist noch nicht eingetragen.`
+        : `${next.restDays} ${next.restDays === 1 ? 'Ruhetag' : 'Ruhetage'} · Nachwirkung ${next.intensity}`);
+  return `
+    <div class="nextrow">
+      <span>${esc(progWorkout(p, next.variant).name)}</span>
+      <span class="when">${next.due ? 'dran' : 'ab ' + fmtDate(next.readyDate)}</span>
+    </div>
+    <div class="sub" style="margin:6px 0 0;">${grund}</div>
+    ${letzte.length ? `<div class="lastsessions">${letzte.map(s => `
+      <div class="lastrow"><span>${esc(s.name)}</span><span class="date">${fmtDate(s.date)}${s.intensity ? ' · ' + esc(s.intensity) : ''}</span></div>`).join('')}</div>` : ''}
+  `;
 }
 
-function renderVolume(info, program){
+/* Soll = eine volle Runde A + B + C, Ist = die laufende Runde. Beides ist damit
+   unabhängig davon, über wie viele Tage sich die Runde zieht. */
+function renderVolume(program){
   const targets = planTargets(program);
-  const vol = cycleVolume(info);
+  const vol = roundVolume();
   return MUSCLES.map(m => {
     const v = vol[m] || 0, t = targets[m] || 0;
     const pct = t > 0 ? Math.min(100, (v/t)*100) : 0;
@@ -1826,13 +1880,12 @@ function renderProgress(){
     ${renderRelativeStrength()}
     <div class="card">
       <h2 class="cardlabel">Gesamt</h2>
-      <div class="sub">${DATA.sessions.length} Krafteinheiten · ${DATA.cardioSessions.length} Ausdauereinheiten · ${streakCycles()} Zyklen in Folge komplett</div>
+      <div class="sub">${DATA.sessions.length} Krafteinheiten · ${DATA.cardioSessions.length} Ausdauereinheiten · ${roundsComplete()} volle ${roundsComplete() === 1 ? 'Runde' : 'Runden'} (A + B + C)</div>
     </div>
   `;
 }
 
 function renderDataView(){
-  const info = cycleInfo();
   const bw = DATA.bodyWeights.slice().sort((a, b) => a.date.localeCompare(b.date));
   const latestBw = bw.length ? bw[bw.length - 1] : null;
   return `
@@ -1868,9 +1921,12 @@ function renderDataView(){
       <button class="chip readinesschip ${DATA.lockScreenBeep ? 'active' : ''}" data-action="toggle-lockscreen-beep">${DATA.lockScreenBeep ? 'Ton bei gesperrtem Bildschirm · Musik pausiert' : 'Musik läuft weiter · Ton nur bei offener App'}</button>
     </div>
     <div class="card">
-      <h2>Zyklus</h2>
-      <div class="sub">${info ? `Gestartet am ${fmtDate(DATA.cycleStart)} · heute Tag ${info.day} von 7` : 'Noch nicht gestartet — dein erstes abgeschlossenes Training wird Tag 1.'}</div>
-      ${info ? `<button class="btn secondary" data-action="restart-cycle">Zyklus neu starten (heute = Tag 1)</button>` : ''}
+      <h2>Rhythmus</h2>
+      <div class="sub">Kein fester Wochenplan: Die Pause bis zur nächsten Einheit ergibt sich aus der Nachwirkung, die du am Tag nach dem Training einträgst.</div>
+      <div class="metalist">
+        ${INTENSITY_ORDER.map(v => `<div class="metaitem"><span>Nachwirkung ${v}</span><span class="metaval">${REST_DAYS[v]} ${REST_DAYS[v] === 1 ? 'Ruhetag' : 'Ruhetage'}</span></div>`).join('')}
+        <div class="metaitem"><span>Volle Runden</span><span class="metaval">${roundsComplete()}</span></div>
+      </div>
     </div>
     <div class="card">
       <h2>Deine Daten</h2>
@@ -2035,6 +2091,19 @@ function attachHandlers(){
     toast(DATA.lockScreenBeep ? 'Ton auch bei gesperrtem Bildschirm' : 'Musik läuft künftig weiter');
   };
 
+  document.querySelectorAll('[data-action="set-intensity"]').forEach(b => {
+    b.onclick = () => {
+      const idx = +b.dataset.idx;
+      const val = b.dataset.value;
+      if(!DATA.sessions[idx] || REST_DAYS[val] == null) return;
+      DATA.sessions[idx].intensity = val;
+      saveData();
+      render();
+      const n = REST_DAYS[val];
+      toast(`Notiert: ${val} — ${n} ${n === 1 ? 'Ruhetag' : 'Ruhetage'}`);
+    };
+  });
+
   document.querySelectorAll('[data-action="add-set"]').forEach(b => {
     b.onclick = () => {
       const key = b.dataset.key;
@@ -2119,16 +2188,6 @@ function attachHandlers(){
   const deleteEditBtn = document.querySelector('[data-action="delete-edit"]');
   if(deleteEditBtn) deleteEditBtn.onclick = deleteEditEntry;
 
-  const restartBtn = document.querySelector('[data-action="restart-cycle"]');
-  if(restartBtn) restartBtn.onclick = () => {
-    if(confirm('Heute wird Tag 1 eines neuen Zyklus. Deine Historie bleibt erhalten. Fortfahren?')){
-      DATA.cycleStart = todayISO();
-      saveData();
-      render();
-      toast('Zyklus neu gestartet — heute ist Tag 1');
-    }
-  };
-
   const exportBtn = document.querySelector('[data-action="export"]');
   if(exportBtn) exportBtn.onclick = () => {
     const blob = new Blob([JSON.stringify(DATA, null, 2)], {type:'application/json'});
@@ -2151,7 +2210,7 @@ function attachHandlers(){
       try{
         const parsed = JSON.parse(reader.result);
         if(!Array.isArray(parsed.sessions) || !Array.isArray(parsed.cardioSessions)){ toast('Ungültige Backup-Datei'); return; }
-        DATA = Object.assign({ sessions:[], cardioSessions:[], mobilitySessions:[], bodyWeights:[], cycleStart:null, variants:{}, lastExport:null, setAdjust:{} }, parsed);
+        DATA = Object.assign({ sessions:[], cardioSessions:[], mobilitySessions:[], bodyWeights:[], variants:{}, lastExport:null, setAdjust:{} }, parsed);
         /* Wer gerade eine Backup-Datei eingelesen hat, besitzt nachweislich eine —
            die Erinnerung startet deshalb neu, statt sofort wieder anzuschlagen. */
         DATA.lastExport = todayISO();
