@@ -63,6 +63,56 @@ const PROGRAMS = {
         examples:['Cable Crunch','Crunches an der Maschine','Hanging Leg Raise','Ab Wheel']}
     ]}
   }},
+  split: { name:'Split', workouts: {
+    A: { name:'Oberkörper (+ Core)', exercises: [
+      {id:'incline',      name:'Schrägbankvariante',            muscle:'Brust',    tier:'core',      sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight',
+        examples:['Schrägbankdrücken LH','Schrägbankdrücken KH','Schrägbankdrücken Maschine']},
+      {id:'fly',          name:'Flyvariante',                   muscle:'Brust',    tier:'isolation', sets:2, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight',
+        examples:['Fly am Kabelzug','Butterflymaschine','Fly mit Kurzhanteln']},
+      {id:'vpull_wide',   name:'Vertikale Zugbewegung breit',   muscle:'Rücken',   tier:'core',      sets:2, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight',
+        examples:['Latziehen breit','Latzugmaschine breit','Klimmzüge breit']},
+      {id:'hpull_wide',   name:'Horizontale Zugbewegung breit', muscle:'Rücken',   tier:'accessory', sets:2, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
+        examples:['Rudern breit Kabelzug','Rudern breit KH','Rudern breit LH','Rudermaschine breit brustgestützt','T-Bar Rudern']},
+      {id:'vpull_close',  name:'Vertikale Zugbewegung eng',     muscle:'Rücken',   tier:'core',      sets:3, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight',
+        examples:['Chin Ups','Latziehen eng','Latzugmaschine eng','High Row mit engem Griff']},
+      {id:'lateral',      name:'Seithebevariation',             muscle:'Schulter', tier:'accessory', sets:6, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight',
+        examples:['Seitheben KH','Seitheben Kabelzug','Seitheben Maschine']},
+      {id:'reardelt',     name:'Hintere Schulter Isolation',    muscle:'Schulter', tier:'isolation', sets:2, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight',
+        examples:['Rear Delt Row','Reverse Butterfly am Kabelzug','Reverse Butterfly Maschine']},
+      {id:'biceps',       name:'Bizeps Isolation',              muscle:'Arme',     tier:'isolation', sets:4, repMin:6,  repMax:10, unit:'kg', inc:1,   type:'weight',
+        examples:['Preacher Curls Maschine','Preacher Curls KH','Kurzhantelcurls stehend','Kurzhantelcurls sitzend','Curls am Kabelzug']},
+      {id:'carry',        name:'Farmers Carry',                 muscle:'Core',     tier:'isolation', sets:3, repMin:20, repMax:45, unit:'kg', inc:2.5, type:'weight', repUnit:'Sek.',
+        examples:['Farmers Carry KH','Farmers Walk Trap Bar','Koffergriff einarmig','Farmers Carry Griffe']},
+      {id:'core_iso',     name:'Core-Stabilisation',            muscle:'Core',     tier:'accessory', sets:3, repMin:30, repMax:60, unit:'Sek.', inc:0, type:'bodyweight', repUnit:'Sek.',
+        examples:['Plank','Side Plank','RKC Plank','Hollow Hold','Copenhagen Plank']},
+      {id:'abs',          name:'Bauch Isolation',               muscle:'Core',     tier:'isolation', sets:3, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight',
+        examples:['Cable Crunch','Crunches an der Maschine','Hanging Leg Raise','Ab Wheel']}
+    ]},
+    B: { name:'Unterkörper', exercises: [
+      {id:'legpress',     name:'Beinpresse Variation',          muscle:'Beine',    tier:'core',      sets:2, repMin:6,  repMax:10, unit:'kg', inc:5,   type:'weight',
+        examples:['Liegende Beinpresse','Sitzende Beinpresse','45°-Beinpresse','Einbeinige Beinpresse']},
+      {id:'legext',       name:'Beinstrecker',                  muscle:'Beine',    tier:'core',      sets:2, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
+        examples:['Beinstrecker Maschine']},
+      {id:'legcurl',      name:'Beinbeuger Isolation',          muscle:'Beine',    tier:'isolation', sets:2, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
+        examples:['Beinbeuger sitzend','Beinbeuger liegend']},
+      {id:'deadlift_var', name:'Kreuzhebevariation',            muscle:'Rücken',   tier:'core',      sets:3, repMin:5,  repMax:8,  unit:'kg', inc:5,   type:'weight',
+        examples:['Konventionelles Kreuzheben','Rumänisches Kreuzheben','Rumänisches Kreuzheben KH','Stiff Leg Deadlift']},
+      {id:'calves',       name:'Waden Isolation',               muscle:'Waden',    tier:'accessory', sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
+        examples:['Wadenheben stehend','Wadenheben sitzend']}
+    ]},
+    C: { name:'Ganzkörper', exercises: [
+      {id:'squat_var',    name:'Kniebeugevariation',            muscle:'Beine',    tier:'core',      sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight',
+        examples:['Kniebeuge frei/Multipresse','Hack Squat','Pendulum Squat','Split Squat','Bulgarian Split Squat']},
+      {id:'hpress',       name:'Horizontale Druckbewegung',     muscle:'Brust',    tier:'core',      sets:3, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight',
+        examples:['Bankdrücken LH','Bankdrücken KH','Bankdrücken Multipresse','Brustpresse Maschine','Cable Press']},
+      {id:'hpull_close',  name:'Horizontale Zugbewegung eng',   muscle:'Rücken',   tier:'accessory', sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
+        examples:['Rudern eng Kabelzug','Rudern eng KH','Rudern eng LH','Rudermaschine eng brustgestützt']},
+      {id:'vpress',       name:'Vertikale Druckbewegung',       muscle:'Schulter', tier:'core',      sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight',
+        examples:['Schulterdrücken KH','Schulterdrücken LH','Schulterdrücken Maschine']},
+      {id:'triceps',      name:'Trizeps Isolation',             muscle:'Arme',     tier:'accessory', sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
+        examples:['Trizepsdrücken Überkopf Kabel','Trizepsdrücken Überkopf KH','Pushdowns am Seil','Katana Extensions','French Press','Skull Crusher']}
+    ]}
+  }},
   home: { name:'Home', workouts: {
     A: { name:'Home A · Squat/Push/Pull', exercises: [
       {id:'bw_squat',    name:'Kniebeugevariation',          muscle:'Beine',    tier:'core',      sets:3, repMin:15, repMax:25, unit:'Wdh.', inc:0, type:'bodyweight',
@@ -114,7 +164,7 @@ const PROGRAMS = {
     ]}
   }}
 };
-const PROGRAM_ORDER = ['gym','home'];
+const PROGRAM_ORDER = ['split','gym','home'];
 const VARIANT_ORDER = ['A','B','C'];
 const LENGTHS = {
   voll: { label:'Voll', minutes:'~45 min', filter: (ex) => true },
@@ -1119,7 +1169,8 @@ const ICON_FLAME = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="tr
 function renderProgramSwitch(){
   const p = DATA.currentProgram || 'gym';
   return `<div class="progtoggle pos-${p}" role="tablist" aria-label="Programm">
-    <button class="pt-btn ${p==='gym'?'active':''}" data-action="switch-program" data-to="gym" role="tab" aria-selected="${p==='gym'}">${ICON_DUMBBELL}<span>Gym</span></button>
+    <button class="pt-btn ${p==='split'?'active':''}" data-action="switch-program" data-to="split" role="tab" aria-selected="${p==='split'}">${ICON_DUMBBELL}<span>Split</span></button>
+    <button class="pt-btn ${p==='gym'?'active':''}" data-action="switch-program" data-to="gym" role="tab" aria-selected="${p==='gym'}">${ICON_DUMBBELL}<span>GK</span></button>
     <button class="pt-btn ${p==='home'?'active':''}" data-action="switch-program" data-to="home" role="tab" aria-selected="${p==='home'}">${ICON_HOUSE}<span>Home</span></button>
   </div>`;
 }
@@ -1146,7 +1197,7 @@ function renderOnboarding(){
     <div class="card">
       ${renderProgramSwitch()}
       <h2>${firstWk.name}</h2>
-      <div class="sub">Der Tag, an dem du dein erstes Training abschließt, wird automatisch <b>Tag 1</b> deines 7-Tage-Zyklus.</div>
+      <div class="sub">Nach deinem ersten Training fragt die App am Folgetag nach der Nachwirkung und leitet daraus deine Pause bis zur nächsten Einheit ab.</div>
       ${renderLengthChoice('A')}
       <button class="btn" data-action="start-workout" data-variant="A" data-length="${len}">${LENGTHS[len].label} starten (${progExerciseCount(p,'A',len)} Übungen)</button>
       <div style="height:8px"></div>
