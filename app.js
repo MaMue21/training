@@ -79,8 +79,6 @@ const PROGRAMS = {
         examples:['Rear Delt Row','Reverse Butterfly am Kabelzug','Reverse Butterfly Maschine']},
       {id:'biceps',       name:'Bizeps Isolation',              muscle:'Arme',     tier:'isolation', sets:4, repMin:6,  repMax:10, unit:'kg', inc:1,   type:'weight',
         examples:['Preacher Curls Maschine','Preacher Curls KH','Kurzhantelcurls stehend','Kurzhantelcurls sitzend','Curls am Kabelzug']},
-      {id:'carry',        name:'Farmers Carry',                 muscle:'Core',     tier:'isolation', sets:3, repMin:20, repMax:45, unit:'kg', inc:2.5, type:'weight', repUnit:'Sek.',
-        examples:['Farmers Carry KH','Farmers Walk Trap Bar','Koffergriff einarmig','Farmers Carry Griffe']},
       {id:'core_iso',     name:'Core-Stabilisation',            muscle:'Core',     tier:'accessory', sets:3, repMin:30, repMax:60, unit:'Sek.', inc:0, type:'bodyweight', repUnit:'Sek.',
         examples:['Plank','Side Plank','RKC Plank','Hollow Hold','Copenhagen Plank']},
       {id:'abs',          name:'Bauch Isolation',               muscle:'Core',     tier:'isolation', sets:3, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight',
@@ -112,7 +110,9 @@ const PROGRAMS = {
       {id:'vpress',       name:'Vertikale Druckbewegung',       muscle:'Schulter', tier:'core',      sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight',
         examples:['Schulterdrücken KH','Schulterdrücken LH','Schulterdrücken Maschine']},
       {id:'triceps',      name:'Trizeps Isolation',             muscle:'Arme',     tier:'accessory', sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
-        examples:['Trizepsdrücken Überkopf Kabel','Trizepsdrücken Überkopf KH','Pushdowns am Seil','Katana Extensions','French Press','Skull Crusher']}
+        examples:['Trizepsdrücken Überkopf Kabel','Trizepsdrücken Überkopf KH','Pushdowns am Seil','Katana Extensions','French Press','Skull Crusher']},
+      {id:'carry',        name:'Farmers Carry',                 muscle:'Core',     tier:'isolation', sets:3, repMin:20, repMax:45, unit:'kg', inc:2.5, type:'weight', repUnit:'Sek.',
+        examples:['Farmers Carry KH','Farmers Walk Trap Bar','Koffergriff einarmig','Farmers Carry Griffe']}
     ]}
   }},
   home: { name:'Home', workouts: {

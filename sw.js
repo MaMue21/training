@@ -4,7 +4,7 @@
 /* WICHTIG: Diese Versionsnummer bei JEDER Änderung an index.html, styles.css,
    app.js oder icon.png um 1 hochzählen. Nur ein geänderter Name lässt den
    Browser den alten Cache verwerfen. Der pre-commit-Hook in .githooks/ erinnert daran. */
-const CACHE = 'training-app-v23';
+const CACHE = 'training-app-v24';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './icon.png'];
 
 self.addEventListener('install', (e) => {
