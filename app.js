@@ -73,9 +73,7 @@ const PROGRAMS = {
         examples:['Latziehen breit','Latzugmaschine breit','Klimmzüge breit']},
       {id:'hpull_wide',   name:'Horizontale Zugbewegung breit', muscle:'Rücken',   tier:'accessory', sets:2, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
         examples:['Rudern breit Kabelzug','Rudern breit KH','Rudern breit LH','Rudermaschine breit brustgestützt','T-Bar Rudern']},
-      {id:'vpull_close',  name:'Vertikale Zugbewegung eng',     muscle:'Rücken',   tier:'core',      sets:3, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight',
-        examples:['Chin Ups','Latziehen eng','Latzugmaschine eng','High Row mit engem Griff']},
-      {id:'lateral',      name:'Seithebevariation',             muscle:'Schulter', tier:'accessory', sets:6, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight',
+      {id:'lateral',      name:'Seithebevariation',             muscle:'Schulter', tier:'accessory', sets:3, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight',
         examples:['Seitheben KH','Seitheben Kabelzug','Seitheben Maschine']},
       {id:'reardelt',     name:'Hintere Schulter Isolation',    muscle:'Schulter', tier:'isolation', sets:2, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight',
         examples:['Rear Delt Row','Reverse Butterfly am Kabelzug','Reverse Butterfly Maschine']},
@@ -98,7 +96,9 @@ const PROGRAMS = {
       {id:'deadlift_var', name:'Kreuzhebevariation',            muscle:'Rücken',   tier:'core',      sets:3, repMin:5,  repMax:8,  unit:'kg', inc:5,   type:'weight',
         examples:['Konventionelles Kreuzheben','Rumänisches Kreuzheben','Rumänisches Kreuzheben KH','Stiff Leg Deadlift']},
       {id:'calves',       name:'Waden Isolation',               muscle:'Waden',    tier:'accessory', sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
-        examples:['Wadenheben stehend','Wadenheben sitzend']}
+        examples:['Wadenheben stehend','Wadenheben sitzend']},
+      {id:'lateral',      name:'Seithebevariation',             muscle:'Schulter', tier:'accessory', sets:3, repMin:8,  repMax:12, unit:'kg', inc:1,   type:'weight',
+        examples:['Seitheben KH','Seitheben Kabelzug','Seitheben Maschine']}
     ]},
     C: { name:'Ganzkörper', exercises: [
       {id:'squat_var',    name:'Kniebeugevariation',            muscle:'Beine',    tier:'core',      sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight',
@@ -107,6 +107,8 @@ const PROGRAMS = {
         examples:['Bankdrücken LH','Bankdrücken KH','Bankdrücken Multipresse','Brustpresse Maschine','Cable Press']},
       {id:'hpull_close',  name:'Horizontale Zugbewegung eng',   muscle:'Rücken',   tier:'accessory', sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
         examples:['Rudern eng Kabelzug','Rudern eng KH','Rudern eng LH','Rudermaschine eng brustgestützt']},
+      {id:'vpull_close',  name:'Vertikale Zugbewegung eng',     muscle:'Rücken',   tier:'core',      sets:3, repMin:6,  repMax:10, unit:'kg', inc:2.5, type:'weight',
+        examples:['Chin Ups','Latziehen eng','Latzugmaschine eng','High Row mit engem Griff']},
       {id:'vpress',       name:'Vertikale Druckbewegung',       muscle:'Schulter', tier:'core',      sets:3, repMin:6,  repMax:8,  unit:'kg', inc:2.5, type:'weight',
         examples:['Schulterdrücken KH','Schulterdrücken LH','Schulterdrücken Maschine']},
       {id:'triceps',      name:'Trizeps Isolation',             muscle:'Arme',     tier:'accessory', sets:3, repMin:8,  repMax:12, unit:'kg', inc:2.5, type:'weight',
